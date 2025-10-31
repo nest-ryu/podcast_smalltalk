@@ -202,19 +202,13 @@ class YouTubeAudioDownloader:
                         break
         
         # yt-dlp 옵션 설정
-        postprocessor_config = {
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }
-        
-        # ffmpeg 경로가 있으면 포스트프로세서에 직접 지정
-        if self.ffmpeg_bin:
-            postprocessor_config['executable'] = self.ffmpeg_bin
-        
         self.ydl_opts = {
             'format': 'bestaudio/best',
-            'postprocessors': [postprocessor_config],
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
             'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
             'quiet': True,
             'no_warnings': False,
@@ -375,11 +369,8 @@ class YouTubeAudioDownloader:
                         os.environ['FFPROBE_BINARY'] = candidate
                         break
             
-            # 포스트프로세서에도 다시 설정
-            if ydl_opts_local.get('postprocessors'):
-                for pp in ydl_opts_local['postprocessors']:
-                    if pp.get('key') == 'FFmpegExtractAudio':
-                        pp['executable'] = self.ffmpeg_bin
+            # 포스트프로세서는 executable 인자를 지원하지 않으므로 
+            # ffmpeg_location과 환경 변수만으로 충분함
             
             with YoutubeDL(ydl_opts_local) as ydl:
                 ydl.download([video_url])
@@ -585,6 +576,18 @@ st.set_page_config(
 )
 st.title("🎵 Audio Generator | 오디오 생성")
 st.markdown("YouTube에서 다운로드하고 회화 부분을 추출합니다.")
+
+# ffmpeg 설치 확인 안내
+try:
+    import imageio_ffmpeg as iioff
+    ffmpeg_path = iioff.get_ffmpeg_exe()
+    if ffmpeg_path and os.path.exists(ffmpeg_path):
+        st.success(f"✅ ffmpeg 설치 확인: `{ffmpeg_path}`")
+    else:
+        st.warning("⚠️ ffmpeg를 찾을 수 없습니다. `pip install imageio-ffmpeg`를 실행해주세요.")
+except Exception as e:
+    st.error(f"❌ ffmpeg 설치 확인 실패: {e}")
+    st.info("💡 **설치 방법:** `pip install imageio-ffmpeg`를 실행하거나 `requirements.txt`의 패키지를 설치하세요.")
 
 
 # ---------------------------

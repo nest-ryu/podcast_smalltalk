@@ -5,6 +5,8 @@ yt-dlp>=2023.11.16
 pydub>=0.25.1
 openai-whisper>=20230918
 imageio-ffmpeg>=0.4.9
+# imageio-ffmpeg는 ffmpeg 바이너리를 자동으로 제공합니다
+# 온라인 환경(Streamlit Cloud)에서도 작동합니다
 
 
 
