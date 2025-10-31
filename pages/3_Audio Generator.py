@@ -338,10 +338,47 @@ class YouTubeAudioDownloader:
     
     def download_video(self, video_url: str, video_title: str = ""):
         """영상을 MP3로 다운로드"""
-        # ffmpeg 확인
-        if not self.ffmpeg_bin:
+        # 다운로드 직전에 ffmpeg 경로를 다시 확인 (온라인 환경 대응)
+        ffmpeg_bin = None
+        ffprobe_bin = None
+        
+        # 1. 이미 찾은 경로 확인
+        if self.ffmpeg_bin and os.path.exists(self.ffmpeg_bin):
+            ffmpeg_bin = self.ffmpeg_bin
+            ffprobe_bin = self.ffprobe_bin if self.ffprobe_bin and os.path.exists(self.ffprobe_bin) else None
+        
+        # 2. 시스템 PATH에서 다시 찾기
+        if not ffmpeg_bin:
+            ffmpeg_bin = shutil.which("ffmpeg")
+            ffprobe_bin = shutil.which("ffprobe")
+        
+        # 3. imageio-ffmpeg에서 찾기
+        if not ffmpeg_bin:
+            try:
+                import imageio_ffmpeg as iioff
+                ffmpeg_bin = iioff.get_ffmpeg_exe()
+                if ffmpeg_bin and os.path.exists(ffmpeg_bin):
+                    # ffprobe도 같은 디렉토리에서 찾기
+                    ffmpeg_dir = os.path.dirname(ffmpeg_bin)
+                    for probe_name in ['ffprobe', 'ffprobe.exe']:
+                        probe_path = os.path.join(ffmpeg_dir, probe_name)
+                        if os.path.exists(probe_path):
+                            ffprobe_bin = probe_path
+                            break
+            except Exception:
+                pass
+        
+        if not ffmpeg_bin:
             st.error("❌ ffmpeg를 찾을 수 없습니다. imageio-ffmpeg를 설치해주세요: pip install imageio-ffmpeg")
             return None
+        
+        # ffmpeg 경로 정보 표시 (디버깅용)
+        ffmpeg_dir = os.path.dirname(ffmpeg_bin)
+        st.info(f"🔧 사용 중인 ffmpeg: {ffmpeg_bin}")
+        if ffprobe_bin:
+            st.info(f"🔧 사용 중인 ffprobe: {ffprobe_bin}")
+        else:
+            st.warning(f"⚠️ ffprobe를 찾지 못했습니다. (ffmpeg 디렉토리: {ffmpeg_dir})")
             
         try:
             st.session_state.progress = {'status': 'downloading', 'percent': 0}
@@ -349,28 +386,19 @@ class YouTubeAudioDownloader:
             ydl_opts_local = dict(self.ydl_opts)
             ydl_opts_local['outtmpl'] = os.path.join(self.download_dir, f"{safe_title}.%(ext)s")
             
-            # ffmpeg 경로를 다시 확인하여 옵션에 명시적으로 추가
-            ffmpeg_dir = os.path.dirname(self.ffmpeg_bin)
+            # ffmpeg 경로 설정 - 여러 방법 시도
             ydl_opts_local['ffmpeg_location'] = ffmpeg_dir
             
-            # 환경 변수 설정
-            os.environ['FFMPEG_BINARY'] = self.ffmpeg_bin
-            if self.ffprobe_bin:
-                os.environ['FFPROBE_BINARY'] = self.ffprobe_bin
-            else:
-                # ffprobe를 다시 찾기 시도
-                probe_candidates = [
-                    os.path.join(ffmpeg_dir, 'ffprobe'),
-                    os.path.join(ffmpeg_dir, 'ffprobe.exe'),
-                ]
-                for candidate in probe_candidates:
-                    if os.path.exists(candidate):
-                        self.ffprobe_bin = candidate
-                        os.environ['FFPROBE_BINARY'] = candidate
-                        break
+            # 환경 변수 명시적 설정
+            os.environ['FFMPEG_BINARY'] = ffmpeg_bin
+            os.environ['FFPROBE_BINARY'] = ffprobe_bin if ffprobe_bin else ffmpeg_bin.replace('ffmpeg', 'ffprobe').replace('ffmpeg.exe', 'ffprobe.exe')
             
-            # 포스트프로세서는 executable 인자를 지원하지 않으므로 
-            # ffmpeg_location과 환경 변수만으로 충분함
+            # PATH에도 추가
+            if ffmpeg_dir not in os.environ.get('PATH', ''):
+                os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
+            
+            # yt-dlp에 직접 전달할 수 있도록 설정
+            # 참고: yt-dlp는 ffmpeg_location 디렉토리에서 ffmpeg와 ffprobe를 모두 찾습니다
             
             with YoutubeDL(ydl_opts_local) as ydl:
                 ydl.download([video_url])
