@@ -499,6 +499,7 @@ def run_podcast_cutter_pipeline(src: Path):
     """podcast_cutter 파이프라인 실행"""
     try:
         ffmpeg_bin = shutil.which("ffmpeg")
+        ffprobe_bin = shutil.which("ffprobe")
         if not ffmpeg_bin:
             try:
                 import imageio_ffmpeg as iioff
@@ -506,6 +507,26 @@ def run_podcast_cutter_pipeline(src: Path):
             except Exception:
                 st.error("ffmpeg를 찾을 수 없습니다. imageio-ffmpeg를 설치해주세요.")
                 return None
+        ffmpeg_dir = os.path.dirname(ffmpeg_bin)
+
+        if not ffprobe_bin and ffmpeg_dir:
+            for candidate in [
+                os.path.join(ffmpeg_dir, 'ffprobe'),
+                os.path.join(ffmpeg_dir, 'ffprobe.exe'),
+            ]:
+                if os.path.exists(candidate):
+                    ffprobe_bin = candidate
+                    break
+
+        # 환경 변수 및 PATH 설정
+        os.environ['FFMPEG_BINARY'] = ffmpeg_bin
+        if ffprobe_bin:
+            os.environ['FFPROBE_BINARY'] = ffprobe_bin
+        else:
+            os.environ['FFPROBE_BINARY'] = ffmpeg_bin
+
+        if ffmpeg_dir and ffmpeg_dir not in os.environ.get('PATH', ''):
+            os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
         
         # Step 1: 40초~160초 구간 자르기
         st.write("  - 40초~160초 구간 추출 중...")
@@ -531,6 +552,11 @@ def run_podcast_cutter_pipeline(src: Path):
         # 먼저 pydub 시도 (Python 3.12 이하에서 작동)
         try:
             from pydub import AudioSegment
+            # pydub이 사용할 ffmpeg 경로 지정
+            AudioSegment.converter = ffmpeg_bin
+            AudioSegment.ffmpeg = ffmpeg_bin
+            if ffprobe_bin:
+                AudioSegment.ffprobe = ffprobe_bin
             rough_audio = AudioSegment.from_file(str(tmp_rough), format="mp3")
             local_start, local_end = detect_dialogue_with_silence(rough_audio)
             st.write(f"  - 감지된 회화 구간: {local_start:.2f}초 ~ {local_end:.2f}초")
@@ -544,16 +570,16 @@ def run_podcast_cutter_pipeline(src: Path):
                     "-f", "null", "-"
                 ]
                 result = subprocess.run(
-                    detect_cmd, 
-                    capture_output=True, 
-                    text=True, 
-                    stderr=subprocess.STDOUT
+                    detect_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True
                 )
                 
                 # silencedetect 출력 파싱
                 silence_starts = []
                 silence_ends = []
-                for line in result.stderr.split('\n'):
+                for line in result.stdout.split('\n'):
                     if 'silence_start' in line:
                         try:
                             start_time = float(line.split('silence_start: ')[1].split()[0])
