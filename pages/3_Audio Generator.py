@@ -373,7 +373,7 @@ class YouTubeAudioDownloader:
         
         # 2. 시스템 PATH에서 다시 찾기
         if not ffmpeg_bin:
-            ffmpeg_bin = shutil.which("ffmpeg")
+        ffmpeg_bin = shutil.which("ffmpeg")
             ffprobe_bin = shutil.which("ffprobe")
         
         # 3. imageio-ffmpeg에서 찾기
@@ -396,45 +396,24 @@ class YouTubeAudioDownloader:
             st.error("❌ ffmpeg를 찾을 수 없습니다. imageio-ffmpeg를 설치해주세요: pip install imageio-ffmpeg")
             return None
         
-        # ffmpeg 경로 정보 표시 (디버깅용)
+        # ffmpeg 경로 정보
         ffmpeg_dir = os.path.dirname(ffmpeg_bin)
-        st.info(f"🔧 사용 중인 ffmpeg: {ffmpeg_bin}")
         
         # ffprobe가 없으면 ffmpeg와 같은 디렉토리에 ffprobe 심볼릭 링크 만들기
         if not ffprobe_bin:
-            # ffprobe를 ffmpeg 디렉토리에 심볼릭 링크로 만들기 (yt-dlp가 같은 디렉토리에서 찾음)
             try:
-                # ffmpeg 디렉토리에 ffprobe 심볼릭 링크 만들기
                 ffprobe_link = os.path.join(ffmpeg_dir, 'ffprobe')
-                
-                # Windows가 아닌 경우 (Linux)
                 if os.name != 'nt':
                     try:
-                        # 이미 존재하면 제거
                         if os.path.exists(ffprobe_link) or os.path.islink(ffprobe_link):
                             os.remove(ffprobe_link)
-                        # 심볼릭 링크 생성 (ffmpeg를 ffprobe로)
                         os.symlink(ffmpeg_bin, ffprobe_link)
                         if os.path.exists(ffprobe_link):
                             ffprobe_bin = ffprobe_link
-                            st.success(f"✅ ffprobe 심볼릭 링크 생성: {ffprobe_bin}")
-                    except (OSError, PermissionError) as e:
-                        # 심볼릭 링크 생성 실패 (권한 문제 등)
-                        st.warning(f"⚠️ ffprobe 심볼릭 링크 생성 실패: {e}")
-                        # 실행 권한 확인
-                        if os.access(ffmpeg_dir, os.W_OK):
-                            st.info("💡 디렉토리에 쓰기 권한이 있지만 링크 생성 실패. 다른 방법 시도...")
-                        else:
-                            st.warning(f"💡 디렉토리에 쓰기 권한이 없습니다: {ffmpeg_dir}")
-            except Exception as e:
-                st.warning(f"⚠️ ffprobe 생성 시도 중 오류: {e}")
-            
-            if not ffprobe_bin:
-                st.warning(f"⚠️ ffprobe를 찾지 못했습니다. (ffmpeg 디렉토리: {ffmpeg_dir})")
-                st.info("💡 yt-dlp가 ffprobe 없이도 작동할 수 있도록 시도합니다...")
-            
-        if ffprobe_bin:
-            st.info(f"🔧 사용 중인 ffprobe: {ffprobe_bin}")
+                    except (OSError, PermissionError):
+                        pass
+            except Exception:
+                pass
             
         try:
             st.session_state.progress = {'status': 'downloading', 'percent': 0}
@@ -578,7 +557,7 @@ def run_podcast_cutter_pipeline(src: Path):
                     "-f", "null", "-"
                 ]
                 result = subprocess.run(
-                    detect_cmd,
+                    detect_cmd, 
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True
@@ -712,26 +691,14 @@ st.set_page_config(
 st.title("🎵 Audio Generator | 오디오 생성")
 st.markdown("YouTube에서 다운로드하고 회화 부분을 추출합니다.")
 
-# ffmpeg 설치 확인 안내
-try:
-    import imageio_ffmpeg as iioff
-    ffmpeg_path = iioff.get_ffmpeg_exe()
-    if ffmpeg_path and os.path.exists(ffmpeg_path):
-        st.success(f"✅ ffmpeg 설치 확인: `{ffmpeg_path}`")
-    else:
-        st.warning("⚠️ ffmpeg를 찾을 수 없습니다. `pip install imageio-ffmpeg`를 실행해주세요.")
-except Exception as e:
-    st.error(f"❌ ffmpeg 설치 확인 실패: {e}")
-    st.info("💡 **설치 방법:** `pip install imageio-ffmpeg`를 실행하거나 `requirements.txt`의 패키지를 설치하세요.")
-
 
 # ---------------------------
 # YouTube 다운로더 초기화
 # ---------------------------
 try:
-    if 'downloader' not in st.session_state:
-        st.session_state.downloader = YouTubeAudioDownloader(download_dir=TEMP_DOWNLOAD_DIR)
-    downloader = st.session_state.downloader
+if 'downloader' not in st.session_state:
+    st.session_state.downloader = YouTubeAudioDownloader(download_dir=TEMP_DOWNLOAD_DIR)
+downloader = st.session_state.downloader
 except Exception as e:
     st.error(f"❌ 다운로더 초기화 실패: {e}")
     st.stop()
