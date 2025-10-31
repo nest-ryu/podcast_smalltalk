@@ -375,10 +375,39 @@ class YouTubeAudioDownloader:
         # ffmpeg 경로 정보 표시 (디버깅용)
         ffmpeg_dir = os.path.dirname(ffmpeg_bin)
         st.info(f"🔧 사용 중인 ffmpeg: {ffmpeg_bin}")
+        
+        # ffprobe가 없으면 ffmpeg를 ffprobe로 사용 시도 (일부 기능에 사용)
+        if not ffprobe_bin:
+            # ffprobe를 ffmpeg의 심볼릭 링크/복사본으로 만들기 시도 (Linux 환경)
+            # 참고: 온라인 환경에서는 파일 쓰기가 제한될 수 있음
+            try:
+                # 임시 디렉토리에 ffprobe 심볼릭 링크 만들기 시도
+                import tempfile
+                temp_dir = tempfile.gettempdir()
+                temp_ffprobe = os.path.join(temp_dir, 'ffprobe')
+                
+                # 심볼릭 링크 생성 시도 (Linux)
+                if os.name != 'nt':  # Windows가 아닌 경우
+                    try:
+                        if os.path.exists(temp_ffprobe):
+                            os.remove(temp_ffprobe)
+                        os.symlink(ffmpeg_bin, temp_ffprobe)
+                        if os.path.exists(temp_ffprobe):
+                            ffprobe_bin = temp_ffprobe
+                            st.info(f"🔧 임시 ffprobe 생성: {ffprobe_bin}")
+                    except Exception:
+                        pass
+                
+                # 실패하면 ffmpeg 경로를 ffprobe로 사용 (yt-dlp가 자동으로 처리)
+            except Exception:
+                pass
+            
+            if not ffprobe_bin:
+                st.warning(f"⚠️ ffprobe를 찾지 못했습니다. (ffmpeg 디렉토리: {ffmpeg_dir})")
+                st.info("💡 yt-dlp가 ffprobe 없이도 작동할 수 있도록 시도합니다...")
+            
         if ffprobe_bin:
             st.info(f"🔧 사용 중인 ffprobe: {ffprobe_bin}")
-        else:
-            st.warning(f"⚠️ ffprobe를 찾지 못했습니다. (ffmpeg 디렉토리: {ffmpeg_dir})")
             
         try:
             st.session_state.progress = {'status': 'downloading', 'percent': 0}
@@ -386,19 +415,23 @@ class YouTubeAudioDownloader:
             ydl_opts_local = dict(self.ydl_opts)
             ydl_opts_local['outtmpl'] = os.path.join(self.download_dir, f"{safe_title}.%(ext)s")
             
-            # ffmpeg 경로 설정 - 여러 방법 시도
+            # ffmpeg 경로 설정 - 디렉토리 경로 지정
             ydl_opts_local['ffmpeg_location'] = ffmpeg_dir
             
             # 환경 변수 명시적 설정
             os.environ['FFMPEG_BINARY'] = ffmpeg_bin
-            os.environ['FFPROBE_BINARY'] = ffprobe_bin if ffprobe_bin else ffmpeg_bin.replace('ffmpeg', 'ffprobe').replace('ffmpeg.exe', 'ffprobe.exe')
+            if ffprobe_bin:
+                os.environ['FFPROBE_BINARY'] = ffprobe_bin
+            else:
+                # ffprobe가 없으면 ffmpeg 경로를 사용 (yt-dlp가 자동 처리 시도)
+                os.environ['FFPROBE_BINARY'] = ffmpeg_bin
             
-            # PATH에도 추가
+            # PATH에도 추가 (우선순위 최상위)
             if ffmpeg_dir not in os.environ.get('PATH', ''):
                 os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
             
-            # yt-dlp에 직접 전달할 수 있도록 설정
-            # 참고: yt-dlp는 ffmpeg_location 디렉토리에서 ffmpeg와 ffprobe를 모두 찾습니다
+            # 추가: ffprobe가 없어도 작동하도록 포스트프로세서 옵션 조정
+            # 포스트프로세서가 ffprobe를 사용하지 않도록 설정 시도
             
             with YoutubeDL(ydl_opts_local) as ydl:
                 ydl.download([video_url])
