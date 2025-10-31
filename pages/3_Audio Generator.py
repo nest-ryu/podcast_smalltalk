@@ -202,19 +202,14 @@ class YouTubeAudioDownloader:
                         break
         
         # yt-dlp 옵션 설정
+        # 포스트프로세서 없이 다운로드하고, 나중에 직접 ffmpeg로 변환
         self.ydl_opts = {
-            'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
+            'format': 'bestaudio/best',  # 최고 품질 오디오만 다운로드
             'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
             'quiet': True,
             'no_warnings': False,
             'noprogress': True,
             'progress_hooks': [],
-            'postprocessor_hooks': [],
         }
         
         # ffmpeg 경로 설정 (여러 방법 시도)
@@ -435,23 +430,66 @@ class YouTubeAudioDownloader:
             if ffmpeg_dir not in current_path:
                 os.environ['PATH'] = ffmpeg_dir + os.pathsep + current_path
             
-            # 디버깅: 설정 확인
-            st.info(f"📋 설정 정보:")
-            st.code(f"ffmpeg_location: {ffmpeg_dir}\nFFMPEG_BINARY: {os.environ.get('FFMPEG_BINARY')}\nFFPROBE_BINARY: {os.environ.get('FFPROBE_BINARY')}\nPATH에 추가됨: {ffmpeg_dir in os.environ.get('PATH', '')}")
-            
+            # 포스트프로세서 없이 다운로드 (원본 포맷으로 다운로드)
             with YoutubeDL(ydl_opts_local) as ydl:
                 ydl.download([video_url])
-            # 예상 경로 우선 반환
-            expected_path = os.path.join(self.download_dir, f"{safe_title}.mp3")
-            if os.path.exists(expected_path):
-                return expected_path
-            # 폴백: 가장 최근 mp3 파일
+            
+            # 다운로드된 파일 찾기 (m4a, webm, opus 등 가능)
             files = os.listdir(self.download_dir)
-            mp3_files = [f for f in files if f.endswith('.mp3')]
-            if mp3_files:
-                mp3_files.sort(key=lambda x: os.path.getmtime(os.path.join(self.download_dir, x)), reverse=True)
-                return os.path.join(self.download_dir, mp3_files[0])
-            return None
+            downloaded_files = [f for f in files if os.path.splitext(f)[0] == safe_title]
+            if not downloaded_files:
+                # 파일명이 다를 수 있으므로 가장 최근 파일 찾기
+                all_audio_files = [f for f in files if any(f.lower().endswith(ext) for ext in ['.m4a', '.webm', '.opus', '.mp3', '.ogg'])]
+                if all_audio_files:
+                    all_audio_files.sort(key=lambda x: os.path.getmtime(os.path.join(self.download_dir, x)), reverse=True)
+                    downloaded_file = os.path.join(self.download_dir, all_audio_files[0])
+                else:
+                    st.error("❌ 다운로드된 파일을 찾을 수 없습니다.")
+                    return None
+            else:
+                downloaded_file = os.path.join(self.download_dir, downloaded_files[0])
+            
+            # 파일이 이미 mp3이면 그대로 반환
+            if downloaded_file.lower().endswith('.mp3'):
+                return downloaded_file
+            
+            # ffmpeg로 MP3로 변환
+            st.info("🔄 MP3로 변환 중...")
+            mp3_output = os.path.join(self.download_dir, f"{safe_title}.mp3")
+            
+            try:
+                # ffmpeg를 사용하여 MP3로 변환
+                cmd = [
+                    ffmpeg_bin,
+                    '-i', downloaded_file,
+                    '-acodec', 'libmp3lame',
+                    '-b:a', '192k',
+                    '-y',  # 덮어쓰기
+                    mp3_output
+                ]
+                
+                result = subprocess.run(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                
+                if result.returncode == 0 and os.path.exists(mp3_output):
+                    # 원본 파일 삭제
+                    try:
+                        os.remove(downloaded_file)
+                    except Exception:
+                        pass
+                    st.success(f"✅ MP3 변환 완료: {os.path.basename(mp3_output)}")
+                    return mp3_output
+                else:
+                    st.error(f"❌ MP3 변환 실패: {result.stderr}")
+                    return None
+                    
+            except Exception as e:
+                st.error(f"❌ ffmpeg 변환 오류: {e}")
+                return None
         except Exception as e:
             st.error(f"다운로드 실패: {e}")
             return None
