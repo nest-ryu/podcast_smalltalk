@@ -172,7 +172,8 @@ class YouTubeAudioDownloader:
                 if self.ffmpeg_bin:
                     ffmpeg_dir = os.path.dirname(self.ffmpeg_bin)
                     # Windows와 Linux 모두 고려
-                    for probe_name in ['ffprobe.exe', 'ffprobe', 'ffprobe.exe']:
+                    probe_names = ['ffprobe.exe', 'ffprobe']
+                    for probe_name in probe_names:
                         probe_path = os.path.join(ffmpeg_dir, probe_name)
                         if os.path.exists(probe_path):
                             self.ffprobe_bin = probe_path
@@ -201,13 +202,19 @@ class YouTubeAudioDownloader:
                         break
         
         # yt-dlp 옵션 설정
+        postprocessor_config = {
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }
+        
+        # ffmpeg 경로가 있으면 포스트프로세서에 직접 지정
+        if self.ffmpeg_bin:
+            postprocessor_config['executable'] = self.ffmpeg_bin
+        
         self.ydl_opts = {
             'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
+            'postprocessors': [postprocessor_config],
             'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
             'quiet': True,
             'no_warnings': False,
@@ -220,11 +227,13 @@ class YouTubeAudioDownloader:
         if ffmpeg_location_dir:
             # 방법 1: 디렉토리 경로
             self.ydl_opts['ffmpeg_location'] = ffmpeg_location_dir
-            # 방법 2: 실행 파일 전체 경로 (backup)
+            # 방법 2: 환경 변수 설정
             if self.ffmpeg_bin:
-                # 환경 변수도 설정
                 if 'PATH' not in os.environ or ffmpeg_location_dir not in os.environ['PATH']:
                     os.environ['PATH'] = ffmpeg_location_dir + os.pathsep + os.environ.get('PATH', '')
+        
+        # ffmpeg/ffprobe 찾기 상태 저장 (경고는 나중에 표시)
+        self._ffmpeg_available = self.ffmpeg_bin is not None
 
         # 진행 표시 훅 연결
         self.ydl_opts['progress_hooks'].append(self._progress_hook)
@@ -335,6 +344,11 @@ class YouTubeAudioDownloader:
     
     def download_video(self, video_url: str, video_title: str = ""):
         """영상을 MP3로 다운로드"""
+        # ffmpeg 확인
+        if not self.ffmpeg_bin:
+            st.error("❌ ffmpeg를 찾을 수 없습니다. imageio-ffmpeg를 설치해주세요: pip install imageio-ffmpeg")
+            return None
+            
         try:
             st.session_state.progress = {'status': 'downloading', 'percent': 0}
             safe_title = self._make_filesafe_title(video_title or "")
@@ -342,13 +356,30 @@ class YouTubeAudioDownloader:
             ydl_opts_local['outtmpl'] = os.path.join(self.download_dir, f"{safe_title}.%(ext)s")
             
             # ffmpeg 경로를 다시 확인하여 옵션에 명시적으로 추가
-            if self.ffmpeg_bin:
-                ffmpeg_dir = os.path.dirname(self.ffmpeg_bin)
-                ydl_opts_local['ffmpeg_location'] = ffmpeg_dir
-                # 환경 변수도 다시 설정 (안전을 위해)
-                os.environ['FFMPEG_BINARY'] = self.ffmpeg_bin
-                if self.ffprobe_bin:
-                    os.environ['FFPROBE_BINARY'] = self.ffprobe_bin
+            ffmpeg_dir = os.path.dirname(self.ffmpeg_bin)
+            ydl_opts_local['ffmpeg_location'] = ffmpeg_dir
+            
+            # 환경 변수 설정
+            os.environ['FFMPEG_BINARY'] = self.ffmpeg_bin
+            if self.ffprobe_bin:
+                os.environ['FFPROBE_BINARY'] = self.ffprobe_bin
+            else:
+                # ffprobe를 다시 찾기 시도
+                probe_candidates = [
+                    os.path.join(ffmpeg_dir, 'ffprobe'),
+                    os.path.join(ffmpeg_dir, 'ffprobe.exe'),
+                ]
+                for candidate in probe_candidates:
+                    if os.path.exists(candidate):
+                        self.ffprobe_bin = candidate
+                        os.environ['FFPROBE_BINARY'] = candidate
+                        break
+            
+            # 포스트프로세서에도 다시 설정
+            if ydl_opts_local.get('postprocessors'):
+                for pp in ydl_opts_local['postprocessors']:
+                    if pp.get('key') == 'FFmpegExtractAudio':
+                        pp['executable'] = self.ffmpeg_bin
             
             with YoutubeDL(ydl_opts_local) as ydl:
                 ydl.download([video_url])
