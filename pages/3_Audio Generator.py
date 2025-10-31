@@ -8,10 +8,20 @@ from pathlib import Path
 import streamlit as st
 import subprocess
 import shutil
-from config import AUDIO_DIR, TEMP_DOWNLOAD_DIR
+
+# 프로젝트 루트 경로 (pages/ 상위 기준)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+
+# config 에서 경로를 가져오되, 누락 시 안전한 기본값으로 대체
+try:
+    from config import AUDIO_DIR, TEMP_DOWNLOAD_DIR
+except Exception:
+    AUDIO_DIR = os.path.join(BASE_DIR, "audio")
+    TEMP_DOWNLOAD_DIR = os.path.join(BASE_DIR, "temp_downloads")
+    os.makedirs(AUDIO_DIR, exist_ok=True)
+    os.makedirs(TEMP_DOWNLOAD_DIR, exist_ok=True)
 
 # 상위 디렉토리에서 모듈 import
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 youtube_audio_path = os.path.join(BASE_DIR, 'youtube_audio')
 podcast_cutter_path = os.path.join(BASE_DIR, 'podcast_cutter')
 
