@@ -21,35 +21,43 @@ except Exception:
     os.makedirs(AUDIO_DIR, exist_ok=True)
     os.makedirs(TEMP_DOWNLOAD_DIR, exist_ok=True)
 
-# 상위 디렉토리에서 모듈 import
+# 상위 디렉토리에서 모듈 import (선택적)
 youtube_audio_path = os.path.join(BASE_DIR, 'youtube_audio')
 podcast_cutter_path = os.path.join(BASE_DIR, 'podcast_cutter')
 
-sys.path.insert(0, youtube_audio_path)
-sys.path.insert(0, podcast_cutter_path)
+# 모듈 사용 가능 여부 추적
+HAS_YOUTUBE_AUDIO = False
+HAS_PODCAST_CUTTER = False
 
-try:
-    from youtube_audio_downloader import YouTubeAudioDownloader
-except ImportError as e:
-    st.error(f"youtube_audio 모듈을 찾을 수 없습니다: {e}")
-    st.info(f"경로: {youtube_audio_path}")
-    st.stop()
+# YouTube Audio 모듈 import 시도
+if os.path.exists(youtube_audio_path):
+    sys.path.insert(0, youtube_audio_path)
+    try:
+        from youtube_audio_downloader import YouTubeAudioDownloader
+        HAS_YOUTUBE_AUDIO = True
+    except ImportError:
+        pass
 
-# podcast_cutter 함수들 import
-try:
-    import re
-    # smalltalk_auto.py에서 직접 함수 import
-    from smalltalk_auto import (
-        transcribe_audio_whisper,
-        detect_dialogue_with_silence,
-        refine_end_by_transcript,
-        derive_base_name,
-        ascii_safe
-    )
-except ImportError as e:
-    st.error(f"podcast_cutter 모듈을 찾을 수 없습니다: {e}")
-    st.info(f"경로: {podcast_cutter_path}")
-    st.stop()
+# Podcast Cutter 모듈 import 시도
+if os.path.exists(podcast_cutter_path):
+    sys.path.insert(0, podcast_cutter_path)
+    try:
+        import re
+        from smalltalk_auto import (
+            transcribe_audio_whisper,
+            detect_dialogue_with_silence,
+            refine_end_by_transcript,
+            derive_base_name,
+            ascii_safe
+        )
+        HAS_PODCAST_CUTTER = True
+    except ImportError:
+        pass
+
+# 모듈이 없으면 안내 메시지
+if not HAS_YOUTUBE_AUDIO or not HAS_PODCAST_CUTTER:
+    # 기본 설정을 먼저 해야 st.stop() 전에 페이지 설정이 완료됨
+    pass
 
 
 # ---------------------------
@@ -239,6 +247,27 @@ st.set_page_config(
 st.title("🎵 Audio Generator | 오디오 생성")
 st.markdown("YouTube에서 다운로드하고 회화 부분을 추출합니다.")
 
+# 필수 모듈 체크 및 안내
+if not HAS_YOUTUBE_AUDIO or not HAS_PODCAST_CUTTER:
+    st.warning("⚠️ **오디오 생성 기능을 사용하려면 추가 모듈이 필요합니다.**")
+    st.info("""
+    이 기능은 다음 모듈들이 필요합니다:
+    - `youtube_audio`: YouTube 다운로드 기능
+    - `podcast_cutter`: 오디오 편집 및 추출 기능
+    
+    **로컬 환경 설정:**
+    1. `youtube_audio`와 `podcast_cutter` 폴더를 프로젝트 상위 디렉토리에 배치하세요.
+    2. 예: `C:\\python_AI\\youtube_audio\\`, `C:\\python_AI\\podcast_cutter\\`
+    
+    **온라인 환경 (Streamlit Cloud):**
+    이 기능은 현재 로컬 환경에서만 사용 가능합니다.
+    """)
+    if not HAS_YOUTUBE_AUDIO:
+        st.error(f"❌ `youtube_audio` 모듈을 찾을 수 없습니다. (경로: {youtube_audio_path})")
+    if not HAS_PODCAST_CUTTER:
+        st.error(f"❌ `podcast_cutter` 모듈을 찾을 수 없습니다. (경로: {podcast_cutter_path})")
+    st.stop()
+
 
 # TEMP_DOWNLOAD_DIR은 config에서 가져옴
 
@@ -246,10 +275,12 @@ st.markdown("YouTube에서 다운로드하고 회화 부분을 추출합니다."
 # ---------------------------
 # YouTube 다운로더 초기화
 # ---------------------------
-if 'downloader' not in st.session_state:
-    st.session_state.downloader = YouTubeAudioDownloader(download_dir=TEMP_DOWNLOAD_DIR)
-
-downloader = st.session_state.downloader
+if HAS_YOUTUBE_AUDIO:
+    if 'downloader' not in st.session_state:
+        st.session_state.downloader = YouTubeAudioDownloader(download_dir=TEMP_DOWNLOAD_DIR)
+    downloader = st.session_state.downloader
+else:
+    downloader = None
 
 
 # ---------------------------
