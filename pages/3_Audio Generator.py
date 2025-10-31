@@ -13,6 +13,8 @@ import re
 import unicodedata
 from typing import List, Dict
 
+from functools import lru_cache
+
 try:
     from yt_dlp import YoutubeDL
 except ImportError:
@@ -41,6 +43,84 @@ except Exception:
 # ============================================================================
 # 내장 함수들 (원래 외부 모듈에서 가져오던 것들)
 # ============================================================================
+
+def ascii_safe(text: str) -> str:
+# ============================================================================
+# ffmpeg/ffprobe 경로 처리 헬퍼
+# ============================================================================
+
+@lru_cache(maxsize=1)
+def ensure_ffmpeg_binaries() -> Dict[str, str]:
+    """ffmpeg/ffprobe 실행 파일 경로를 확보하여 반환.
+    쓰기 권한이 있는 디렉토리(TEMP_DOWNLOAD_DIR/_ffmpeg_bin)에 복사하여 사용한다.
+    """
+    ffmpeg_bin = shutil.which("ffmpeg")
+    ffprobe_bin = shutil.which("ffprobe")
+
+    if not ffmpeg_bin:
+        try:
+            import imageio_ffmpeg as iioff
+            ffmpeg_bin = iioff.get_ffmpeg_exe()
+        except Exception as e:
+            raise RuntimeError("ffmpeg를 찾을 수 없습니다. imageio-ffmpeg를 설치해주세요.") from e
+
+    ffmpeg_dir = os.path.dirname(ffmpeg_bin) if ffmpeg_bin else None
+    if not ffprobe_bin and ffmpeg_dir:
+        for candidate in [
+            os.path.join(ffmpeg_dir, 'ffprobe'),
+            os.path.join(ffmpeg_dir, 'ffprobe.exe'),
+        ]:
+            if os.path.exists(candidate):
+                ffprobe_bin = candidate
+                break
+
+    # 쓰기 가능한 경로에 복사
+    safe_dir = Path(TEMP_DOWNLOAD_DIR) / "_ffmpeg_bin"
+    safe_dir.mkdir(parents=True, exist_ok=True)
+
+    def _copy_binary(src_path: str, target_name: str) -> str:
+        src_path = Path(src_path)
+        dest = safe_dir / target_name
+        try:
+            if not dest.exists() or os.path.getmtime(dest) < os.path.getmtime(src_path):
+                shutil.copy2(src_path, dest)
+                try:
+                    os.chmod(dest, 0o755)
+                except Exception:
+                    pass
+        except Exception:
+            # 복사 실패 시 원본 경로 사용
+            return str(src_path)
+        return str(dest)
+
+    ffmpeg_copy = _copy_binary(ffmpeg_bin, "ffmpeg") if ffmpeg_bin else None
+    if ffprobe_bin:
+        ffprobe_copy = _copy_binary(ffprobe_bin, "ffprobe")
+    else:
+        # ffprobe 가 없으면 ffmpeg 복사본을 이름만 바꿔 사용 (일부 기능에서 요구)
+        ffprobe_copy = _copy_binary(ffmpeg_bin, "ffprobe") if ffmpeg_bin else None
+
+    if ffmpeg_copy:
+        os.environ['FFMPEG_BINARY'] = ffmpeg_copy
+        if ffmpeg_copy and ffmpeg_copy not in os.environ.get('PATH', ''):
+            os.environ['PATH'] = str(Path(ffmpeg_copy).parent) + os.pathsep + os.environ.get('PATH', '')
+
+    if ffprobe_copy:
+        os.environ['FFPROBE_BINARY'] = ffprobe_copy
+
+    # whisper 라이브러리에도 반영
+    try:
+        import whisper.audio as whisper_audio
+        whisper_audio.FFMPEG_BINARY = ffmpeg_copy or ffmpeg_bin
+        whisper_audio.FFPROBE_BINARY = ffprobe_copy or ffprobe_bin or ffmpeg_copy
+    except Exception:
+        pass
+
+    return {
+        "ffmpeg": ffmpeg_copy or ffmpeg_bin,
+        "ffprobe": ffprobe_copy or ffprobe_bin or ffmpeg_copy,
+    }
+
 
 def ascii_safe(text: str) -> str:
     """ASCII 안전 문자열 변환"""
@@ -154,55 +234,13 @@ class YouTubeAudioDownloader:
         if not os.path.exists(download_dir):
             os.makedirs(download_dir)
         
-        # ffmpeg/ffprobe 경로 찾기 (온라인 환경 대응)
-        self.ffmpeg_bin = None
-        self.ffprobe_bin = None
-        ffmpeg_location_dir = None
-        
-        # 1. 시스템 PATH에서 찾기
-        self.ffmpeg_bin = shutil.which("ffmpeg")
-        self.ffprobe_bin = shutil.which("ffprobe")
-        
-        # 2. imageio-ffmpeg에서 찾기 (온라인 환경)
-        if not self.ffmpeg_bin:
-            try:
-                import imageio_ffmpeg as iioff
-                self.ffmpeg_bin = iioff.get_ffmpeg_exe()
-                # ffprobe도 같은 디렉토리에서 찾기
-                if self.ffmpeg_bin:
-                    ffmpeg_dir = os.path.dirname(self.ffmpeg_bin)
-                    # Windows와 Linux 모두 고려
-                    probe_names = ['ffprobe.exe', 'ffprobe']
-                    for probe_name in probe_names:
-                        probe_path = os.path.join(ffmpeg_dir, probe_name)
-                        if os.path.exists(probe_path):
-                            self.ffprobe_bin = probe_path
-                            break
-            except Exception:
-                pass
-        
-        # ffmpeg 경로 설정
-        if self.ffmpeg_bin:
-            ffmpeg_location_dir = os.path.dirname(self.ffmpeg_bin)
-            # 환경 변수 설정 (yt-dlp가 인식하도록)
-            os.environ['FFMPEG_BINARY'] = self.ffmpeg_bin
-            if self.ffprobe_bin:
-                os.environ['FFPROBE_BINARY'] = self.ffprobe_bin
-            else:
-                # ffprobe를 찾지 못했으면 ffmpeg와 같은 경로에서 찾기 시도
-                probe_candidates = [
-                    os.path.join(ffmpeg_location_dir, 'ffprobe'),
-                    os.path.join(ffmpeg_location_dir, 'ffprobe.exe'),
-                    self.ffmpeg_bin.replace('ffmpeg', 'ffprobe').replace('ffmpeg.exe', 'ffprobe.exe')
-                ]
-                for candidate in probe_candidates:
-                    if os.path.exists(candidate):
-                        self.ffprobe_bin = candidate
-                        os.environ['FFPROBE_BINARY'] = candidate
-                        break
-        
-        # yt-dlp 옵션 설정
-        # 포스트프로세서 없이 다운로드하고, 나중에 직접 ffmpeg로 변환
+        # ffmpeg/ffprobe 경로 확보 (임시 디렉토리 포함)
+        ffmpeg_paths = ensure_ffmpeg_binaries()
+        self.ffmpeg_bin = ffmpeg_paths["ffmpeg"]
+        self.ffprobe_bin = ffmpeg_paths["ffprobe"]
+        ffmpeg_location_dir = os.path.dirname(self.ffmpeg_bin) if self.ffmpeg_bin else None
+
+        # yt-dlp 옵션 설정 (포스트프로세서 없이 다운로드)
         self.ydl_opts = {
             'format': 'bestaudio/best',  # 최고 품질 오디오만 다운로드
             'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
@@ -214,12 +252,9 @@ class YouTubeAudioDownloader:
         
         # ffmpeg 경로 설정 (여러 방법 시도)
         if ffmpeg_location_dir:
-            # 방법 1: 디렉토리 경로
             self.ydl_opts['ffmpeg_location'] = ffmpeg_location_dir
-            # 방법 2: 환경 변수 설정
-            if self.ffmpeg_bin:
-                if 'PATH' not in os.environ or ffmpeg_location_dir not in os.environ['PATH']:
-                    os.environ['PATH'] = ffmpeg_location_dir + os.pathsep + os.environ.get('PATH', '')
+            if self.ffmpeg_bin and ffmpeg_location_dir not in os.environ.get('PATH', ''):
+                os.environ['PATH'] = ffmpeg_location_dir + os.pathsep + os.environ.get('PATH', '')
         
         # ffmpeg/ffprobe 찾기 상태 저장 (경고는 나중에 표시)
         self._ffmpeg_available = self.ffmpeg_bin is not None
@@ -498,43 +533,10 @@ class YouTubeAudioDownloader:
 def run_podcast_cutter_pipeline(src: Path):
     """podcast_cutter 파이프라인 실행"""
     try:
-        ffmpeg_bin = shutil.which("ffmpeg")
-        ffprobe_bin = shutil.which("ffprobe")
-        if not ffmpeg_bin:
-            try:
-                import imageio_ffmpeg as iioff
-                ffmpeg_bin = iioff.get_ffmpeg_exe()
-            except Exception:
-                st.error("ffmpeg를 찾을 수 없습니다. imageio-ffmpeg를 설치해주세요.")
-                return None
+        paths = ensure_ffmpeg_binaries()
+        ffmpeg_bin = paths["ffmpeg"]
+        ffprobe_bin = paths["ffprobe"]
         ffmpeg_dir = os.path.dirname(ffmpeg_bin)
-
-        if not ffprobe_bin and ffmpeg_dir:
-            for candidate in [
-                os.path.join(ffmpeg_dir, 'ffprobe'),
-                os.path.join(ffmpeg_dir, 'ffprobe.exe'),
-            ]:
-                if os.path.exists(candidate):
-                    ffprobe_bin = candidate
-                    break
-
-        # 환경 변수 및 PATH 설정
-        os.environ['FFMPEG_BINARY'] = ffmpeg_bin
-        if ffprobe_bin:
-            os.environ['FFPROBE_BINARY'] = ffprobe_bin
-        else:
-            os.environ['FFPROBE_BINARY'] = ffmpeg_bin
-
-        if ffmpeg_dir and ffmpeg_dir not in os.environ.get('PATH', ''):
-            os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
-
-        # whisper 라이브러리가 내부적으로 사용하는 ffmpeg 경로 재설정
-        try:
-            import whisper.audio as whisper_audio
-            whisper_audio.FFMPEG_BINARY = ffmpeg_bin
-            whisper_audio.FFPROBE_BINARY = ffprobe_bin or ffmpeg_bin
-        except Exception:
-            pass
         
         # Step 1: 40초~160초 구간 자르기
         st.write("  - 40초~160초 구간 추출 중...")
