@@ -154,21 +154,51 @@ class YouTubeAudioDownloader:
         if not os.path.exists(download_dir):
             os.makedirs(download_dir)
         
-        # ffmpeg 경로 찾기 (온라인 환경 대응)
-        ffmpeg_location = None
-        ffmpeg_bin = shutil.which("ffmpeg")
-        if not ffmpeg_bin:
+        # ffmpeg/ffprobe 경로 찾기 (온라인 환경 대응)
+        self.ffmpeg_bin = None
+        self.ffprobe_bin = None
+        ffmpeg_location_dir = None
+        
+        # 1. 시스템 PATH에서 찾기
+        self.ffmpeg_bin = shutil.which("ffmpeg")
+        self.ffprobe_bin = shutil.which("ffprobe")
+        
+        # 2. imageio-ffmpeg에서 찾기 (온라인 환경)
+        if not self.ffmpeg_bin:
             try:
                 import imageio_ffmpeg as iioff
-                ffmpeg_bin = iioff.get_ffmpeg_exe()
-                # ffmpeg 실행 파일이 있는 디렉토리 경로 추출
-                if ffmpeg_bin:
-                    ffmpeg_location = os.path.dirname(ffmpeg_bin)
+                self.ffmpeg_bin = iioff.get_ffmpeg_exe()
+                # ffprobe도 같은 디렉토리에서 찾기
+                if self.ffmpeg_bin:
+                    ffmpeg_dir = os.path.dirname(self.ffmpeg_bin)
+                    # Windows와 Linux 모두 고려
+                    for probe_name in ['ffprobe.exe', 'ffprobe', 'ffprobe.exe']:
+                        probe_path = os.path.join(ffmpeg_dir, probe_name)
+                        if os.path.exists(probe_path):
+                            self.ffprobe_bin = probe_path
+                            break
             except Exception:
                 pass
         
-        if ffmpeg_bin:
-            ffmpeg_location = ffmpeg_location or os.path.dirname(ffmpeg_bin)
+        # ffmpeg 경로 설정
+        if self.ffmpeg_bin:
+            ffmpeg_location_dir = os.path.dirname(self.ffmpeg_bin)
+            # 환경 변수 설정 (yt-dlp가 인식하도록)
+            os.environ['FFMPEG_BINARY'] = self.ffmpeg_bin
+            if self.ffprobe_bin:
+                os.environ['FFPROBE_BINARY'] = self.ffprobe_bin
+            else:
+                # ffprobe를 찾지 못했으면 ffmpeg와 같은 경로에서 찾기 시도
+                probe_candidates = [
+                    os.path.join(ffmpeg_location_dir, 'ffprobe'),
+                    os.path.join(ffmpeg_location_dir, 'ffprobe.exe'),
+                    self.ffmpeg_bin.replace('ffmpeg', 'ffprobe').replace('ffmpeg.exe', 'ffprobe.exe')
+                ]
+                for candidate in probe_candidates:
+                    if os.path.exists(candidate):
+                        self.ffprobe_bin = candidate
+                        os.environ['FFPROBE_BINARY'] = candidate
+                        break
         
         # yt-dlp 옵션 설정
         self.ydl_opts = {
@@ -186,9 +216,15 @@ class YouTubeAudioDownloader:
             'postprocessor_hooks': [],
         }
         
-        # ffmpeg 경로가 있으면 yt-dlp 옵션에 추가
-        if ffmpeg_location:
-            self.ydl_opts['ffmpeg_location'] = ffmpeg_location
+        # ffmpeg 경로 설정 (여러 방법 시도)
+        if ffmpeg_location_dir:
+            # 방법 1: 디렉토리 경로
+            self.ydl_opts['ffmpeg_location'] = ffmpeg_location_dir
+            # 방법 2: 실행 파일 전체 경로 (backup)
+            if self.ffmpeg_bin:
+                # 환경 변수도 설정
+                if 'PATH' not in os.environ or ffmpeg_location_dir not in os.environ['PATH']:
+                    os.environ['PATH'] = ffmpeg_location_dir + os.pathsep + os.environ.get('PATH', '')
 
         # 진행 표시 훅 연결
         self.ydl_opts['progress_hooks'].append(self._progress_hook)
@@ -304,6 +340,16 @@ class YouTubeAudioDownloader:
             safe_title = self._make_filesafe_title(video_title or "")
             ydl_opts_local = dict(self.ydl_opts)
             ydl_opts_local['outtmpl'] = os.path.join(self.download_dir, f"{safe_title}.%(ext)s")
+            
+            # ffmpeg 경로를 다시 확인하여 옵션에 명시적으로 추가
+            if self.ffmpeg_bin:
+                ffmpeg_dir = os.path.dirname(self.ffmpeg_bin)
+                ydl_opts_local['ffmpeg_location'] = ffmpeg_dir
+                # 환경 변수도 다시 설정 (안전을 위해)
+                os.environ['FFMPEG_BINARY'] = self.ffmpeg_bin
+                if self.ffprobe_bin:
+                    os.environ['FFPROBE_BINARY'] = self.ffprobe_bin
+            
             with YoutubeDL(ydl_opts_local) as ydl:
                 ydl.download([video_url])
             # 예상 경로 우선 반환
