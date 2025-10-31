@@ -532,11 +532,13 @@ class YouTubeAudioDownloader:
             else:
                 downloaded_file = os.path.join(self.download_dir, downloaded_files[0])
             
-            # 파일이 이미 mp3이면 그대로 반환
-            if downloaded_file.lower().endswith('.mp3'):
+            # 파일이 이미 mp3이면 그대로 반환 (변환 과정 건너뛰기)
+            file_ext = os.path.splitext(downloaded_file)[1].lower()
+            if file_ext == '.mp3':
+                # MP3 파일이면 변환 없이 바로 반환
                 return downloaded_file
             
-            # ffmpeg로 MP3로 변환
+            # 다른 포맷이면 MP3로 변환
             st.info("🔄 MP3로 변환 중...")
             mp3_output = os.path.join(self.download_dir, f"{safe_title}.mp3")
             
