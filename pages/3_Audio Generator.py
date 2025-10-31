@@ -276,14 +276,7 @@ class YouTubeAudioDownloader:
         elif status == 'error':
             st.session_state.progress = {'status': 'error'}
 
-    def _postprocessor_hook(self, pp_dict: Dict):
-        """후처리(오디오 변환) 진행 표시 훅"""
-        status = pp_dict.get('status')
-        pp = pp_dict.get('postprocessor')
-        if status == 'started' and pp == 'FFmpegExtractAudio':
-            st.session_state.progress = {'status': 'converting'}
-        elif status == 'finished' and pp == 'FFmpegExtractAudio':
-            st.session_state.progress = {'status': 'completed'}
+    # 포스트프로세서를 사용하지 않으므로 _postprocessor_hook 제거
     
     def _get_videos_from_url(self, channel_url: str, max_results: int = 10) -> List[Dict]:
         """채널 URL로부터 영상 목록 가져오기"""
