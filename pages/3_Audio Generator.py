@@ -1,6 +1,7 @@
 """
 오디오 생성 페이지
 YouTube에서 다운로드하고 podcast_cutter로 회화 부분 추출
+모든 필요한 코드가 내부에 포함되어 있습니다.
 """
 import os
 import sys
@@ -8,9 +9,24 @@ from pathlib import Path
 import streamlit as st
 import subprocess
 import shutil
+import re
+import unicodedata
+from typing import List, Dict
+
+try:
+    from yt_dlp import YoutubeDL
+except ImportError:
+    st.error("yt-dlp가 설치되어 있지 않습니다. 'pip install yt-dlp'를 실행해주세요.")
+    st.stop()
+
+try:
+    import whisper
+except ImportError:
+    st.error("openai-whisper가 설치되어 있지 않습니다. 'pip install openai-whisper'를 실행해주세요.")
+    st.stop()
 
 # 프로젝트 루트 경로 (pages/ 상위 기준)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # config 에서 경로를 가져오되, 누락 시 안전한 기본값으로 대체
 try:
@@ -21,48 +37,275 @@ except Exception:
     os.makedirs(AUDIO_DIR, exist_ok=True)
     os.makedirs(TEMP_DOWNLOAD_DIR, exist_ok=True)
 
-# 상위 디렉토리에서 모듈 import (선택적)
-youtube_audio_path = os.path.join(BASE_DIR, 'youtube_audio')
-podcast_cutter_path = os.path.join(BASE_DIR, 'podcast_cutter')
 
-# 모듈 사용 가능 여부 추적
-HAS_YOUTUBE_AUDIO = False
-HAS_PODCAST_CUTTER = False
+# ============================================================================
+# 내장 함수들 (원래 외부 모듈에서 가져오던 것들)
+# ============================================================================
 
-# YouTube Audio 모듈 import 시도
-if os.path.exists(youtube_audio_path):
-    sys.path.insert(0, youtube_audio_path)
+def ascii_safe(text: str) -> str:
+    """ASCII 안전 문자열 변환"""
+    return re.sub(r"[^a-zA-Z0-9 .:-]", "", text)
+
+
+def transcribe_audio_whisper(src_audio_path, model_size: str = "base"):
+    """Whisper를 사용한 음성 인식"""
+    model = whisper.load_model(model_size)
+    result = model.transcribe(str(src_audio_path), fp16=False, word_timestamps=False)
+    segments = [
+        {"start": seg["start"], "end": seg["end"], "text": seg["text"].strip()}
+        for seg in result.get("segments", [])
+    ]
+    return {
+        "text": result.get("text", "").strip(),
+        "segments": segments,
+        "duration": result.get("duration", None),
+    }
+
+
+def detect_dialogue_with_silence(audio_segment):
+    """pydub를 사용한 무음 구간 감지로 회화 구간 찾기"""
     try:
-        from youtube_audio_downloader import YouTubeAudioDownloader
-        HAS_YOUTUBE_AUDIO = True
-    except ImportError:
-        pass
-
-# Podcast Cutter 모듈 import 시도
-if os.path.exists(podcast_cutter_path):
-    sys.path.insert(0, podcast_cutter_path)
-    try:
-        import re
-        from smalltalk_auto import (
-            transcribe_audio_whisper,
-            detect_dialogue_with_silence,
-            refine_end_by_transcript,
-            derive_base_name,
-            ascii_safe
+        from pydub import silence
+        # 무음 구간 감지 (최소 1.2초, 평균보다 20dB 낮음)
+        silence_ranges = silence.detect_silence(
+            audio_segment,
+            min_silence_len=1200,  # 1.2초
+            silence_thresh=audio_segment.dBFS - 20  # 20dB below average
         )
-        HAS_PODCAST_CUTTER = True
+        silence_ranges = [(start/1000, end/1000) for start, end in silence_ranges]
+        
+        # 회화 구간 추출 (첫 번째 무음 끝 ~ 마지막 무음 시작)
+        if len(silence_ranges) >= 2:
+            start_t = silence_ranges[0][1]  # 첫 번째 무음 끝
+            end_t = silence_ranges[-1][0]   # 마지막 무음 시작
+        else:
+            # Fallback: 오디오의 10% ~ 90% 구간 사용
+            start_t = len(audio_segment) * 0.1 / 1000
+            end_t = len(audio_segment) * 0.9 / 1000
+        
+        return start_t, end_t
     except ImportError:
-        pass
-
-# 모듈이 없으면 안내 메시지
-if not HAS_YOUTUBE_AUDIO or not HAS_PODCAST_CUTTER:
-    # 기본 설정을 먼저 해야 st.stop() 전에 페이지 설정이 완료됨
-    pass
+        # pydub가 없으면 전체 구간 반환
+        duration = len(audio_segment) / 1000
+        return 0.0, duration
 
 
-# ---------------------------
-# 함수 정의
-# ---------------------------
+def refine_end_by_transcript(tr_result, min_words_per_seg: int = 3, tail_silence_threshold: float = 1.5) -> float | None:
+    """Whisper 결과를 사용하여 끝부분 보정"""
+    try:
+        segments = tr_result.get("segments", []) or []
+        if not segments:
+            return None
+        def wc(t: str) -> int:
+            return len(re.findall(r"\b\w+\b", t))
+        speech_like = [s for s in segments if wc(s.get("text", "")) >= min_words_per_seg]
+        last_end = (speech_like[-1]["end"] if speech_like else segments[-1]["end"]) or 0.0
+        dur = tr_result.get("duration") or last_end
+        if (dur - last_end) >= tail_silence_threshold:
+            return float(last_end)
+        return None
+    except Exception:
+        return None
+
+
+def derive_base_name(src: Path) -> str:
+    """출력 파일명 생성 (예: '75. paranoid')"""
+    stem = src.stem
+    
+    # 구분자 정규화
+    cleaned = stem.replace("|", "-").replace("_", " ")
+    
+    # 패턴 1: '... - Episode 75', 'Ep75', 'EP 75'
+    m = re.search(r"(?i)\b(?:episode|ep)\s*(\d{1,4})\b", cleaned)
+    if m:
+        num = m.group(1)
+        left = cleaned[: m.start()].strip()
+        title = left or cleaned
+        title = re.sub(r"[^A-Za-z0-9\s.-]", "", title).strip().lower()
+        title = re.sub(r"\s+", " ", title)
+        return f"{num}. {title}" if title else f"{num}. audio"
+    
+    # 패턴 2: 파일명의 첫 번째 숫자를 에피소드 번호로 사용
+    m = re.search(r"(\d{1,4})", cleaned)
+    if m:
+        num = m.group(1)
+        before = cleaned[: m.start()].strip()
+        after = cleaned[m.end() :].strip()
+        candidate = before if before else after
+        candidate = re.sub(r"^[\s\-–_|]+", "", candidate)
+        title = re.sub(r"[^A-Za-z0-9\s.-]", "", candidate).strip().lower()
+        title = re.sub(r"\s+", " ", title)
+        return f"{num}. {title}" if title else f"{num}. audio"
+    
+    # 패턴 3: Fallback - 정리된 파일명
+    title = re.sub(r"[^A-Za-z0-9\s.-]", "", cleaned).strip().lower()
+    title = re.sub(r"\s+", " ", title) or "audio"
+    return title
+
+
+# ============================================================================
+# YouTubeAudioDownloader 클래스 (내장)
+# ============================================================================
+
+class YouTubeAudioDownloader:
+    def __init__(self, download_dir: str = "downloads"):
+        """초기화"""
+        self.download_dir = download_dir
+        if not os.path.exists(download_dir):
+            os.makedirs(download_dir)
+        
+        # yt-dlp 옵션 설정
+        self.ydl_opts = {
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
+            'quiet': True,
+            'no_warnings': False,
+            'noprogress': True,
+            'progress_hooks': [],
+            'postprocessor_hooks': [],
+        }
+
+        # 진행 표시 훅 연결
+        self.ydl_opts['progress_hooks'].append(self._progress_hook)
+        self.ydl_opts['postprocessor_hooks'].append(self._postprocessor_hook)
+        
+        # Streamlit 세션 상태에 진행상황 저장용
+        if 'progress' not in st.session_state:
+            st.session_state.progress = None
+
+    def _normalize_visible_text(self, text: str) -> str:
+        """유니코드 수학 볼드 등 특수 스타일 문자를 일반 문자로 정규화."""
+        if not text:
+            return ""
+        decomposed = unicodedata.normalize('NFKD', text)
+        without_marks = ''.join(c for c in decomposed if unicodedata.category(c) != 'Mn')
+        normalized_spaces = re.sub(r"\s+", " ", without_marks).strip()
+        return normalized_spaces
+
+    def _make_filesafe_title(self, title: str) -> str:
+        """Windows에서도 안전한 파일명으로 변환."""
+        base = self._normalize_visible_text(title) or "audio"
+        base = re.sub(r"[<>:\\/\\|?*\"]", " ", base)
+        base = ''.join(ch for ch in base if ch >= ' ')
+        base = re.sub(r"\s+", " ", base).strip().rstrip('.')
+        if len(base) > 150:
+            base = base[:150].rstrip()
+        return base or "audio"
+
+    def _progress_hook(self, status_dict: Dict):
+        """다운로드 진행상황 표시 훅"""
+        status = status_dict.get('status')
+        if status == 'downloading':
+            downloaded = status_dict.get('downloaded_bytes') or 0
+            total = status_dict.get('total_bytes') or status_dict.get('total_bytes_estimate') or 0
+            percent = (downloaded / total * 100) if total else 0.0
+            speed = status_dict.get('speed')
+            eta = status_dict.get('eta')
+            
+            st.session_state.progress = {
+                'percent': percent,
+                'speed': speed,
+                'eta': eta,
+                'downloaded': downloaded,
+                'total': total
+            }
+        elif status == 'finished':
+            st.session_state.progress = {'status': 'converting'}
+        elif status == 'error':
+            st.session_state.progress = {'status': 'error'}
+
+    def _postprocessor_hook(self, pp_dict: Dict):
+        """후처리(오디오 변환) 진행 표시 훅"""
+        status = pp_dict.get('status')
+        pp = pp_dict.get('postprocessor')
+        if status == 'started' and pp == 'FFmpegExtractAudio':
+            st.session_state.progress = {'status': 'converting'}
+        elif status == 'finished' and pp == 'FFmpegExtractAudio':
+            st.session_state.progress = {'status': 'completed'}
+    
+    def _get_videos_from_url(self, channel_url: str, max_results: int = 10) -> List[Dict]:
+        """채널 URL로부터 영상 목록 가져오기"""
+        channel_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': True,
+        }
+        
+        try:
+            with YoutubeDL(channel_opts) as ydl:
+                channel_info = ydl.extract_info(channel_url, download=False)
+                
+                if channel_info and 'entries' in channel_info:
+                    videos = []
+                    for i, entry in enumerate(channel_info['entries'][:max_results], 1):
+                        video_id = entry.get('id')
+                        if not video_id:
+                            continue
+                        title = entry.get('title', '제목 없음')
+                        url = entry.get('url') or f"https://www.youtube.com/watch?v={video_id}"
+                        duration = entry.get('duration', 0)
+                        
+                        videos.append({
+                            'index': i,
+                            'title': title,
+                            'url': url,
+                            'id': video_id,
+                            'duration': duration
+                        })
+                    
+                    return videos if videos else None
+        except Exception as e:
+            raise Exception(f"URL에서 영상 목록 가져오기 실패: {e}")
+    
+    def format_duration(self, seconds) -> str:
+        """초를 시간:분:초 형식으로 변환"""
+        if not seconds:
+            return "알 수 없음"
+        
+        seconds = int(float(seconds))
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        secs = seconds % 60
+        
+        if hours > 0:
+            return f"{hours}:{minutes:02d}:{secs:02d}"
+        else:
+            return f"{minutes}:{secs:02d}"
+    
+    def download_video(self, video_url: str, video_title: str = ""):
+        """영상을 MP3로 다운로드"""
+        try:
+            st.session_state.progress = {'status': 'downloading', 'percent': 0}
+            safe_title = self._make_filesafe_title(video_title or "")
+            ydl_opts_local = dict(self.ydl_opts)
+            ydl_opts_local['outtmpl'] = os.path.join(self.download_dir, f"{safe_title}.%(ext)s")
+            with YoutubeDL(ydl_opts_local) as ydl:
+                ydl.download([video_url])
+            # 예상 경로 우선 반환
+            expected_path = os.path.join(self.download_dir, f"{safe_title}.mp3")
+            if os.path.exists(expected_path):
+                return expected_path
+            # 폴백: 가장 최근 mp3 파일
+            files = os.listdir(self.download_dir)
+            mp3_files = [f for f in files if f.endswith('.mp3')]
+            if mp3_files:
+                mp3_files.sort(key=lambda x: os.path.getmtime(os.path.join(self.download_dir, x)), reverse=True)
+                return os.path.join(self.download_dir, mp3_files[0])
+            return None
+        except Exception as e:
+            st.error(f"다운로드 실패: {e}")
+            return None
+
+
+# ============================================================================
+# Podcast Cutter 파이프라인 함수
+# ============================================================================
+
 def run_podcast_cutter_pipeline(src: Path):
     """podcast_cutter 파이프라인 실행"""
     try:
@@ -106,7 +349,6 @@ def run_podcast_cutter_pipeline(src: Path):
             # pydub 실패 시 ffmpeg의 silencedetect 사용
             try:
                 st.write("  - ffmpeg silencedetect로 무음 감지 시도...")
-                # ffmpeg silencedetect로 무음 구간 찾기
                 detect_cmd = [
                     ffmpeg_bin, "-i", str(tmp_rough),
                     "-af", "silencedetect=noise=-20dB:duration=0.5",
@@ -137,7 +379,6 @@ def run_podcast_cutter_pipeline(src: Path):
                             pass
                 
                 if silence_starts and silence_ends:
-                    # 첫 번째 무음 구간의 끝 ~ 마지막 무음 구간의 시작
                     local_start = silence_ends[0] if silence_ends else 0.0
                     local_end = silence_starts[-1] if silence_starts else duration
                     if local_end <= local_start:
@@ -236,9 +477,10 @@ def run_podcast_cutter_pipeline(src: Path):
         return None
 
 
-# ---------------------------
-# 기본 설정
-# ---------------------------
+# ============================================================================
+# Streamlit 페이지 설정 및 UI
+# ============================================================================
+
 st.set_page_config(
     page_title="Audio Generator | Podcast Smalltalk",
     page_icon="🎵",
@@ -247,40 +489,14 @@ st.set_page_config(
 st.title("🎵 Audio Generator | 오디오 생성")
 st.markdown("YouTube에서 다운로드하고 회화 부분을 추출합니다.")
 
-# 필수 모듈 체크 및 안내
-if not HAS_YOUTUBE_AUDIO or not HAS_PODCAST_CUTTER:
-    st.warning("⚠️ **오디오 생성 기능을 사용하려면 추가 모듈이 필요합니다.**")
-    st.info("""
-    이 기능은 다음 모듈들이 필요합니다:
-    - `youtube_audio`: YouTube 다운로드 기능
-    - `podcast_cutter`: 오디오 편집 및 추출 기능
-    
-    **로컬 환경 설정:**
-    1. `youtube_audio`와 `podcast_cutter` 폴더를 프로젝트 상위 디렉토리에 배치하세요.
-    2. 예: `C:\\python_AI\\youtube_audio\\`, `C:\\python_AI\\podcast_cutter\\`
-    
-    **온라인 환경 (Streamlit Cloud):**
-    이 기능은 현재 로컬 환경에서만 사용 가능합니다.
-    """)
-    if not HAS_YOUTUBE_AUDIO:
-        st.error(f"❌ `youtube_audio` 모듈을 찾을 수 없습니다. (경로: {youtube_audio_path})")
-    if not HAS_PODCAST_CUTTER:
-        st.error(f"❌ `podcast_cutter` 모듈을 찾을 수 없습니다. (경로: {podcast_cutter_path})")
-    st.stop()
-
-
-# TEMP_DOWNLOAD_DIR은 config에서 가져옴
-
 
 # ---------------------------
 # YouTube 다운로더 초기화
 # ---------------------------
-if HAS_YOUTUBE_AUDIO:
-    if 'downloader' not in st.session_state:
-        st.session_state.downloader = YouTubeAudioDownloader(download_dir=TEMP_DOWNLOAD_DIR)
-    downloader = st.session_state.downloader
-else:
-    downloader = None
+if 'downloader' not in st.session_state:
+    st.session_state.downloader = YouTubeAudioDownloader(download_dir=TEMP_DOWNLOAD_DIR)
+
+downloader = st.session_state.downloader
 
 
 # ---------------------------
@@ -407,4 +623,3 @@ if st.session_state.videos:
                             pass
                     else:
                         st.error("❌ 회화 추출 실패했습니다.")
-
