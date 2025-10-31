@@ -841,7 +841,7 @@ if st.session_state.videos:
                         # 임시 파일 정리 (다운로드된 원본 파일)
                         try:
                             if os.path.exists(downloaded_file):
-                            os.remove(downloaded_file)
+                                os.remove(downloaded_file)
                         except Exception:
                             pass
                         
