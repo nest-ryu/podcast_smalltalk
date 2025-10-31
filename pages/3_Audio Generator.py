@@ -820,6 +820,27 @@ if st.session_state.videos:
                             except Exception:
                                 pass
                         
+                        # Git에 파일 추가 (저장소에 저장)
+                        try:
+                            git_dir = os.path.join(BASE_DIR, '.git')
+                            if os.path.exists(git_dir):
+                                # 상대 경로로 변환
+                                rel_path = os.path.relpath(final_path, BASE_DIR).replace('\\', '/')
+                                git_add_result = subprocess.run(
+                                    ['git', 'add', rel_path],
+                                    cwd=BASE_DIR,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=5
+                                )
+                                if git_add_result.returncode == 0:
+                                    st.success("✅ Git 저장소에 파일이 추가되었습니다.")
+                                else:
+                                    st.warning(f"⚠️ Git 추가 실패: {git_add_result.stderr}")
+                        except Exception as git_error:
+                            # Git 명령 실패 시 무시 (로컬에서 Git이 없을 수 있음)
+                            pass
+                        
                         st.markdown("---")
                         st.subheader("📥 다운로드")
                         
