@@ -373,7 +373,7 @@ class YouTubeAudioDownloader:
         
         # 2. 시스템 PATH에서 다시 찾기
         if not ffmpeg_bin:
-            ffmpeg_bin = shutil.which("ffmpeg")
+        ffmpeg_bin = shutil.which("ffmpeg")
             ffprobe_bin = shutil.which("ffprobe")
         
         # 3. imageio-ffmpeg에서 찾기
@@ -698,9 +698,9 @@ st.markdown("YouTube에서 다운로드하고 회화 부분을 추출합니다."
 # YouTube 다운로더 초기화
 # ---------------------------
 try:
-    if 'downloader' not in st.session_state:
-        st.session_state.downloader = YouTubeAudioDownloader(download_dir=TEMP_DOWNLOAD_DIR)
-    downloader = st.session_state.downloader
+if 'downloader' not in st.session_state:
+    st.session_state.downloader = YouTubeAudioDownloader(download_dir=TEMP_DOWNLOAD_DIR)
+downloader = st.session_state.downloader
 except Exception as e:
     st.error(f"❌ 다운로더 초기화 실패: {e}")
     st.stop()
@@ -802,8 +802,23 @@ if st.session_state.videos:
                         final_filename = os.path.basename(output_file)
                         final_path = os.path.join(AUDIO_DIR, final_filename)
                         
-                        # 파일 이동
+                        # 이미 존재하는 파일이 있으면 삭제
+                        if os.path.exists(final_path):
+                            try:
+                                os.remove(final_path)
+                            except Exception:
+                                pass
+                        
+                        # 파일 이동 (이동 후 원본은 자동 삭제됨)
+                        try:
                         shutil.move(str(output_file), final_path)
+                        except Exception as move_error:
+                            # 이동 실패 시 복사 후 원본 삭제
+                            shutil.copy2(str(output_file), final_path)
+                            try:
+                                os.remove(str(output_file))
+                            except Exception:
+                                pass
                         
                         st.markdown("---")
                         st.subheader("📥 다운로드")
@@ -823,9 +838,17 @@ if st.session_state.videos:
                         
                         st.info(f"📁 파일이 저장되었습니다: `{final_path}`")
                         
-                        # 임시 다운로드 파일 정리
+                        # 임시 파일 정리 (다운로드된 원본 파일)
                         try:
+                            if os.path.exists(downloaded_file):
                             os.remove(downloaded_file)
+                        except Exception:
+                            pass
+                        
+                        # 임시 파일 정리 (output_file이 이미 이동되었지만 혹시 남아있을 수 있음)
+                        try:
+                            if os.path.exists(output_file):
+                                os.remove(output_file)
                         except Exception:
                             pass
                     else:
