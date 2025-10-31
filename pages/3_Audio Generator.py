@@ -527,6 +527,14 @@ def run_podcast_cutter_pipeline(src: Path):
 
         if ffmpeg_dir and ffmpeg_dir not in os.environ.get('PATH', ''):
             os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
+
+        # whisper 라이브러리가 내부적으로 사용하는 ffmpeg 경로 재설정
+        try:
+            import whisper.audio as whisper_audio
+            whisper_audio.FFMPEG_BINARY = ffmpeg_bin
+            whisper_audio.FFPROBE_BINARY = ffprobe_bin or ffmpeg_bin
+        except Exception:
+            pass
         
         # Step 1: 40초~160초 구간 자르기
         st.write("  - 40초~160초 구간 추출 중...")
