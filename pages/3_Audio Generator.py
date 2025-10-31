@@ -226,11 +226,14 @@ class YouTubeAudioDownloader:
 
         # 진행 표시 훅 연결
         self.ydl_opts['progress_hooks'].append(self._progress_hook)
-        self.ydl_opts['postprocessor_hooks'].append(self._postprocessor_hook)
         
-        # Streamlit 세션 상태에 진행상황 저장용
-        if 'progress' not in st.session_state:
-            st.session_state.progress = None
+        # Streamlit 세션 상태에 진행상황 저장용 (안전하게 체크)
+        try:
+            if 'progress' not in st.session_state:
+                st.session_state.progress = None
+        except Exception:
+            # session_state가 없는 경우 무시
+            pass
 
     def _normalize_visible_text(self, text: str) -> str:
         """유니코드 수학 볼드 등 특수 스타일 문자를 일반 문자로 정규화."""
@@ -698,10 +701,13 @@ except Exception as e:
 # ---------------------------
 # YouTube 다운로더 초기화
 # ---------------------------
-if 'downloader' not in st.session_state:
-    st.session_state.downloader = YouTubeAudioDownloader(download_dir=TEMP_DOWNLOAD_DIR)
-
-downloader = st.session_state.downloader
+try:
+    if 'downloader' not in st.session_state:
+        st.session_state.downloader = YouTubeAudioDownloader(download_dir=TEMP_DOWNLOAD_DIR)
+    downloader = st.session_state.downloader
+except Exception as e:
+    st.error(f"❌ 다운로더 초기화 실패: {e}")
+    st.stop()
 
 
 # ---------------------------
