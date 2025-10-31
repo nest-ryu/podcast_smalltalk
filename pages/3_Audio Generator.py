@@ -154,6 +154,22 @@ class YouTubeAudioDownloader:
         if not os.path.exists(download_dir):
             os.makedirs(download_dir)
         
+        # ffmpeg 경로 찾기 (온라인 환경 대응)
+        ffmpeg_location = None
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if not ffmpeg_bin:
+            try:
+                import imageio_ffmpeg as iioff
+                ffmpeg_bin = iioff.get_ffmpeg_exe()
+                # ffmpeg 실행 파일이 있는 디렉토리 경로 추출
+                if ffmpeg_bin:
+                    ffmpeg_location = os.path.dirname(ffmpeg_bin)
+            except Exception:
+                pass
+        
+        if ffmpeg_bin:
+            ffmpeg_location = ffmpeg_location or os.path.dirname(ffmpeg_bin)
+        
         # yt-dlp 옵션 설정
         self.ydl_opts = {
             'format': 'bestaudio/best',
@@ -169,6 +185,10 @@ class YouTubeAudioDownloader:
             'progress_hooks': [],
             'postprocessor_hooks': [],
         }
+        
+        # ffmpeg 경로가 있으면 yt-dlp 옵션에 추가
+        if ffmpeg_location:
+            self.ydl_opts['ffmpeg_location'] = ffmpeg_location
 
         # 진행 표시 훅 연결
         self.ydl_opts['progress_hooks'].append(self._progress_hook)
