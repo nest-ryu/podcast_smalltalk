@@ -186,81 +186,6 @@ def refine_end_by_transcript(tr_result, min_words_per_seg: int = 3, tail_silence
         return None
 
 
-def refine_end_by_audio_analysis(audio_path: Path, initial_end: float, ffmpeg_bin: str) -> float:
-    """오디오 분석을 통해 끝부분을 더 정교하게 보정"""
-    try:
-        from pydub import AudioSegment, silence
-        
-        # 오디오 로드
-        audio = AudioSegment.from_file(str(audio_path), format="mp3")
-        total_duration = len(audio) / 1000.0
-        
-        # 초기 끝부분부터 마지막까지 분석
-        analysis_start = max(0, initial_end - 5.0)  # 끝부분 5초 전부터
-        analysis_end = min(total_duration, initial_end + 10.0)  # 10초 뒤까지
-        analysis_segment = audio[int(analysis_start * 1000):int(analysis_end * 1000)]
-        
-        if len(analysis_segment) < 1000:  # 너무 짧으면 스킵
-            return initial_end
-        
-        # 1. 무음 감지로 실제 음성 끝부분 찾기
-        silence_ranges = silence.detect_silence(
-            analysis_segment,
-            min_silence_len=800,  # 0.8초 이상의 무음
-            silence_thresh=analysis_segment.dBFS - 25  # 25dB 아래
-        )
-        
-        # 마지막 무음 구간 이후에 음성이 있는지 확인
-        refined_end = initial_end
-        if silence_ranges:
-            # 분석 구간 내에서 마지막 무음 이후의 음성 찾기
-            last_silence_end = None
-            for start_ms, end_ms in silence_ranges:
-                silence_end_sec = analysis_start + (end_ms / 1000.0)
-                if silence_end_sec > initial_end - 2.0:  # 끝부분 2초 이내의 무음
-                    last_silence_end = silence_end_sec
-            
-            # 마지막 무음 이후로 실제 음성이 있는지 확인
-            if last_silence_end:
-                # 무음 이후 1초 동안 오디오 에너지 확인
-                check_segment_start = int(last_silence_end * 1000)
-                check_segment_end = int((last_silence_end + 1.0) * 1000)
-                if check_segment_end <= len(audio):
-                    check_segment = audio[check_segment_start:check_segment_end]
-                    # 에너지 레벨이 충분히 높으면 음성이 있는 것으로 판단
-                    if check_segment.dBFS > (analysis_segment.dBFS - 15):
-                        refined_end = last_silence_end + 0.5  # 무음 끝 + 여유
-                    else:
-                        refined_end = last_silence_end  # 무음 끝이 실제 끝
-        
-        # 2. 오디오 에너지 레벨 분석으로 더 정밀하게
-        # 끝부분에서 에너지가 급격히 떨어지는 지점 찾기
-        window_size = 500  # 0.5초 윈도우
-        step_size = 100  # 0.1초 간격
-        
-        energy_threshold = analysis_segment.dBFS - 20  # 20dB 아래면 무음으로 간주
-        last_energy_above_threshold = initial_end
-        
-        for pos_ms in range(len(analysis_segment) - window_size, 0, -step_size):
-            window = analysis_segment[pos_ms:pos_ms + window_size]
-            window_energy = window.dBFS
-            
-            if window_energy > energy_threshold:
-                pos_sec = analysis_start + (pos_ms / 1000.0)
-                last_energy_above_threshold = pos_sec + (window_size / 1000.0)
-                break
-        
-        # 두 방법 중 더 짧은 것을 선택 (더 보수적)
-        refined_end = min(refined_end, last_energy_above_threshold)
-        
-        # 최소 0.5초는 보장
-        return max(initial_end - 10.0, min(refined_end, total_duration))
-        
-    except Exception as e:
-        # 오류 발생 시 원래 값 반환
-        return initial_end
-
-
 def derive_base_name(src: Path) -> str:
     """출력 파일명 생성 (예: '75. paranoid')"""
     stem = src.stem
@@ -705,14 +630,10 @@ def run_podcast_cutter_pipeline(src: Path):
         # Step 4: Whisper로 음성 인식 및 끝부분 보정
         st.write("  - 음성 인식 중...")
         tr = transcribe_audio_whisper(tmp_precise, model_size="base")
-        
-        # 초기 끝부분 계산 (Whisper transcript 기반)
-        audio_duration = tr.get("duration") or duration
         refined_end = refine_end_by_transcript(tr)
         
-        # 첫 번째 보정: Whisper transcript 기반
         if refined_end is not None:
-            st.write(f"  - 끝부분 1차 보정 (transcript): {refined_end:.2f}초까지")
+            st.write(f"  - 끝부분 보정 적용: {refined_end:.2f}초까지 재컷팅...")
             tmp_precise_ref = src.parent / "_st_tmp_precise_refined.mp3"
             cmd2 = [
                 ffmpeg_bin, "-y",
@@ -727,29 +648,6 @@ def run_podcast_cutter_pipeline(src: Path):
             except Exception:
                 pass
             tmp_precise = tmp_precise_ref
-        else:
-            refined_end = audio_duration
-        
-        # 두 번째 보정: 오디오 분석 기반 (더 정교하게)
-        st.write("  - 끝부분 2차 보정 (오디오 분석) 중...")
-        final_refined_end = refine_end_by_audio_analysis(tmp_precise, refined_end, ffmpeg_bin)
-        
-        if abs(final_refined_end - refined_end) > 0.5:  # 0.5초 이상 차이나면 재컷팅
-            st.write(f"  - 끝부분 최종 보정: {final_refined_end:.2f}초까지 재컷팅...")
-            tmp_precise_final = src.parent / "_st_tmp_precise_final.mp3"
-            cmd3 = [
-                ffmpeg_bin, "-y",
-                "-i", str(tmp_precise),
-                "-t", str(max(0.2, final_refined_end)),
-                "-acodec", "libmp3lame", "-b:a", "192k",
-                str(tmp_precise_final),
-            ]
-            subprocess.run(cmd3, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            try:
-                tmp_precise.unlink(missing_ok=True)
-            except Exception:
-                pass
-            tmp_precise = tmp_precise_final
         
         # 최종 파일명 생성
         base_name = derive_base_name(src)
