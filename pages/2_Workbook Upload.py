@@ -8,9 +8,20 @@ from make_episodes_json import add_pdf_to_json, build_json_from_all_pdfs
 def count_git_tracked_files(directory: str, extensions: tuple) -> int:
     """Git에 추적되는 파일만 카운트 (서버에 존재하는 파일)"""
     try:
+        # Git 저장소인지 확인
+        git_dir = os.path.join(BASE_DIR, '.git')
+        if not os.path.exists(git_dir):
+            # Git 저장소가 아니면 로컬 파일 시스템 사용
+            if os.path.exists(directory):
+                return len([f for f in os.listdir(directory) if any(f.lower().endswith(ext) for ext in extensions)])
+            return 0
+        
+        # 상대 경로로 변환
+        rel_directory = os.path.relpath(directory, BASE_DIR).replace('\\', '/')
+        
         # Git에 추적되는 파일 목록 가져오기
         result = subprocess.run(
-            ['git', 'ls-files', directory],
+            ['git', 'ls-files', rel_directory],
             cwd=BASE_DIR,
             capture_output=True,
             text=True,
@@ -36,8 +47,19 @@ def count_git_tracked_files(directory: str, extensions: tuple) -> int:
 def get_git_tracked_files(directory: str, extensions: tuple) -> list:
     """Git에 추적되는 파일 목록 반환 (서버에 존재하는 파일)"""
     try:
+        # Git 저장소인지 확인
+        git_dir = os.path.join(BASE_DIR, '.git')
+        if not os.path.exists(git_dir):
+            # Git 저장소가 아니면 로컬 파일 시스템 사용
+            if os.path.exists(directory):
+                return sorted([f for f in os.listdir(directory) if any(f.lower().endswith(ext) for ext in extensions)])
+            return []
+        
+        # 상대 경로로 변환
+        rel_directory = os.path.relpath(directory, BASE_DIR).replace('\\', '/')
+        
         result = subprocess.run(
-            ['git', 'ls-files', directory],
+            ['git', 'ls-files', rel_directory],
             cwd=BASE_DIR,
             capture_output=True,
             text=True,
