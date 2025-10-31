@@ -448,7 +448,7 @@ class YouTubeAudioDownloader:
         
         # 2. 시스템 PATH에서 다시 찾기
         if not ffmpeg_bin:
-        ffmpeg_bin = shutil.which("ffmpeg")
+            ffmpeg_bin = shutil.which("ffmpeg")
             ffprobe_bin = shutil.which("ffprobe")
         
         # 3. imageio-ffmpeg에서 찾기
