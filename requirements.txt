@@ -1,0 +1,10 @@
+streamlit
+reportlab
+pdfplumber
+yt-dlp>=2023.11.16
+pydub>=0.25.1
+openai-whisper>=20230918
+imageio-ffmpeg>=0.4.9
+
+
+

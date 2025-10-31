@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Virtual environments
+podcast_env/
+venv/
+.venv/
+ENV/
+env/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and temps
+*.log
+*.tmp
+temp_downloads/
+
+# Streamlit
+.streamlit/secrets.toml
+.streamlit/
+
+# Build artifacts
+*.egg-info/
+pip-wheel-metadata/
+dist/
+build/
+
+
