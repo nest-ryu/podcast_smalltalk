@@ -1,7 +1,63 @@
 import os
+import subprocess
 import streamlit as st
-from config import PDF_DIR, AUDIO_DIR, EPISODES_JSON
+from config import PDF_DIR, AUDIO_DIR, EPISODES_JSON, BASE_DIR
 from make_episodes_json import add_pdf_to_json, build_json_from_all_pdfs
+
+
+def count_git_tracked_files(directory: str, extensions: tuple) -> int:
+    """Git에 추적되는 파일만 카운트 (서버에 존재하는 파일)"""
+    try:
+        # Git에 추적되는 파일 목록 가져오기
+        result = subprocess.run(
+            ['git', 'ls-files', directory],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            tracked_files = result.stdout.strip().split('\n')
+            # 빈 문자열 제거 및 확장자 필터링
+            tracked_files = [
+                f for f in tracked_files 
+                if f and any(f.lower().endswith(ext) for ext in extensions)
+            ]
+            return len(tracked_files)
+    except Exception:
+        pass
+    
+    # Git 명령 실패 시 로컬 파일 시스템 사용 (fallback)
+    if os.path.exists(directory):
+        return len([f for f in os.listdir(directory) if any(f.lower().endswith(ext) for ext in extensions)])
+    return 0
+
+
+def get_git_tracked_files(directory: str, extensions: tuple) -> list:
+    """Git에 추적되는 파일 목록 반환 (서버에 존재하는 파일)"""
+    try:
+        result = subprocess.run(
+            ['git', 'ls-files', directory],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            tracked_files = result.stdout.strip().split('\n')
+            # 빈 문자열 제거 및 확장자 필터링, 파일명만 추출
+            file_list = [
+                os.path.basename(f) for f in tracked_files 
+                if f and any(f.lower().endswith(ext) for ext in extensions)
+            ]
+            return sorted(file_list)
+    except Exception:
+        pass
+    
+    # Git 명령 실패 시 로컬 파일 시스템 사용 (fallback)
+    if os.path.exists(directory):
+        return sorted([f for f in os.listdir(directory) if any(f.lower().endswith(ext) for ext in extensions)])
+    return []
 
 
 # ---------------------------
@@ -111,11 +167,11 @@ with col1:
         st.metric("총 에피소드 수", 0)
 
 with col2:
-    pdf_count = len([f for f in os.listdir(PDF_DIR) if f.lower().endswith('.pdf')]) if os.path.exists(PDF_DIR) else 0
+    pdf_count = count_git_tracked_files(PDF_DIR, ('.pdf',))
     st.metric("PDF 파일 수", pdf_count)
 
 with col3:
-    audio_count = len([f for f in os.listdir(AUDIO_DIR) if f.lower().endswith(('.mp3', '.wav', '.m4a'))]) if os.path.exists(AUDIO_DIR) else 0
+    audio_count = count_git_tracked_files(AUDIO_DIR, ('.mp3', '.wav', '.m4a'))
     st.metric("오디오 파일 수", audio_count)
 
 
@@ -125,24 +181,18 @@ with col3:
 tab1, tab2 = st.tabs(["📄 PDF 파일 목록", "🎧 오디오 파일 목록"])
 
 with tab1:
-    if os.path.exists(PDF_DIR):
-        pdf_files = sorted([f for f in os.listdir(PDF_DIR) if f.lower().endswith('.pdf')])
-        if pdf_files:
-            for pdf_file in pdf_files:
-                st.text(f"📄 {pdf_file}")
-        else:
-            st.info("업로드된 PDF 파일이 없습니다.")
+    pdf_files = get_git_tracked_files(PDF_DIR, ('.pdf',))
+    if pdf_files:
+        for pdf_file in pdf_files:
+            st.text(f"📄 {pdf_file}")
     else:
-        st.info("PDF 디렉토리가 없습니다.")
+        st.info("업로드된 PDF 파일이 없습니다. (Git 저장소에 추적되는 파일만 표시)")
 
 with tab2:
-    if os.path.exists(AUDIO_DIR):
-        audio_files = sorted([f for f in os.listdir(AUDIO_DIR) if f.lower().endswith(('.mp3', '.wav', '.m4a'))])
-        if audio_files:
-            for audio_file in audio_files:
-                st.text(f"🎧 {audio_file}")
-        else:
-            st.info("업로드된 오디오 파일이 없습니다.")
+    audio_files = get_git_tracked_files(AUDIO_DIR, ('.mp3', '.wav', '.m4a'))
+    if audio_files:
+        for audio_file in audio_files:
+            st.text(f"🎧 {audio_file}")
     else:
-        st.info("오디오 디렉토리가 없습니다.")
+        st.info("업로드된 오디오 파일이 없습니다. (Git 저장소에 추적되는 파일만 표시)")
 
