@@ -820,12 +820,14 @@ if st.session_state.videos:
                             except Exception:
                                 pass
                         
-                        # Git에 파일 추가 (저장소에 저장)
+                        # Git에 파일 추가, 커밋, 푸시 (저장소에 저장)
                         try:
                             git_dir = os.path.join(BASE_DIR, '.git')
                             if os.path.exists(git_dir):
                                 # 상대 경로로 변환
                                 rel_path = os.path.relpath(final_path, BASE_DIR).replace('\\', '/')
+                                
+                                # 1. git add
                                 git_add_result = subprocess.run(
                                     ['git', 'add', rel_path],
                                     cwd=BASE_DIR,
@@ -833,8 +835,34 @@ if st.session_state.videos:
                                     text=True,
                                     timeout=5
                                 )
+                                
                                 if git_add_result.returncode == 0:
-                                    st.success("✅ Git 저장소에 파일이 추가되었습니다.")
+                                    # 2. git commit
+                                    commit_msg = f"Add audio file: {final_filename}"
+                                    git_commit_result = subprocess.run(
+                                        ['git', 'commit', '-m', commit_msg],
+                                        cwd=BASE_DIR,
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=5
+                                    )
+                                    
+                                    if git_commit_result.returncode == 0:
+                                        # 3. git push
+                                        git_push_result = subprocess.run(
+                                            ['git', 'push', 'origin', 'main'],
+                                            cwd=BASE_DIR,
+                                            capture_output=True,
+                                            text=True,
+                                            timeout=30
+                                        )
+                                        
+                                        if git_push_result.returncode == 0:
+                                            st.success("✅ GitHub 저장소에 파일이 저장되었습니다.")
+                                        else:
+                                            st.warning(f"⚠️ Git 푸시 실패: {git_push_result.stderr}")
+                                    else:
+                                        st.warning(f"⚠️ Git 커밋 실패: {git_commit_result.stderr}")
                                 else:
                                     st.warning(f"⚠️ Git 추가 실패: {git_add_result.stderr}")
                         except Exception as git_error:
