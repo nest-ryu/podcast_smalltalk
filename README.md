@@ -145,6 +145,37 @@ PDF 파일은 다음 형식 중 하나를 지원합니다:
 - `DAY 01 — 제목` 형식
 - `78. 제목` 형식 (숫자로 시작)
 
+### GitHub 자동 업로드 (선택 사항)
+
+오디오 파일 생성 시 GitHub에 자동으로 업로드하려면 GitHub Personal Access Token이 필요합니다.
+
+#### Streamlit Cloud 사용 시
+
+1. **GitHub Personal Access Token 생성:**
+   - GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+   - "Generate new token (classic)" 클릭
+   - `repo` 권한 체크 (전체 저장소 권한)
+   - Token 생성 후 복사
+
+2. **Streamlit Cloud에 Token 설정:**
+   - Streamlit Cloud → App Settings → Secrets
+   - 다음 내용 추가:
+     ```toml
+     GITHUB_TOKEN = "your_token_here"
+     ```
+
+3. **로컬 환경에서 사용 시:**
+   - 환경 변수로 설정:
+     ```bash
+     # Windows PowerShell
+     $env:GITHUB_TOKEN = "your_token_here"
+     
+     # Linux/Mac
+     export GITHUB_TOKEN="your_token_here"
+     ```
+
+**참고:** Token 없이도 파일은 로컬에 저장되며, 수동으로 `git push`를 통해 GitHub에 업로드할 수 있습니다.
+
 각 레슨은 다음 섹션을 포함할 수 있습니다:
 - 🗣 영어 문장
 - 🇰🇷 한국어 번역
