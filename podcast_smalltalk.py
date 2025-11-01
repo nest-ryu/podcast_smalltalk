@@ -175,6 +175,14 @@ def normalize_title(title):
     return cleaned.lower()
 
 
+def extract_normalized_title_from_audio_file(filename: str) -> str:
+    """오디오 파일명에서 숫자 접두사를 제거하고 정규화된 제목을 반환"""
+    name, _ = os.path.splitext(filename)
+    # 숫자 + 구분자 제거 (예: "079. homesick" -> "homesick")
+    name = re.sub(r"^\d+[\s._-]*", "", name)
+    return normalize_title(name)
+
+
 def find_audio_file_for_lesson(lesson_num, title_en="", title_ko=""):
     """레슨 번호에 맞는 오디오 파일 찾기 (다양한 패턴 지원)"""
     audio_files = get_git_tracked_audio_files()
@@ -265,7 +273,7 @@ def find_audio_file_for_lesson(lesson_num, title_en="", title_ko=""):
                     if any(word in file_lower for word in title_words):
                         return os.path.join(AUDIO_DIR, audio_file)
     
-    # 패턴 4: 파일명에 레슨 번호가 포함된 경우 (마지막 시도)
+    # 패턴 4: 파일명에 레슨 번호가 포함된 경우
     for audio_file in audio_files:
         # "79" 또는 "079" 같은 패턴 찾기
         if (f".{lesson_num}." in audio_file or 
@@ -275,6 +283,24 @@ def find_audio_file_for_lesson(lesson_num, title_en="", title_ko=""):
             audio_file.startswith(f"{lesson_num}_")):
             return os.path.join(AUDIO_DIR, audio_file)
     
+    # 패턴 5: 번호가 달라도 제목이 일치하는 경우 (마지막 fallback)
+    if not candidates:
+        search_titles = [t for t in (normalized_title_en, normalized_title_ko) if t]
+        if search_titles:
+            title_matches = []
+            for audio_file in audio_files:
+                normalized_file_title = extract_normalized_title_from_audio_file(audio_file)
+                if normalized_file_title and any(
+                    search_title in normalized_file_title or normalized_file_title in search_title
+                    for search_title in search_titles
+                ):
+                    title_matches.append(audio_file)
+            if len(title_matches) == 1:
+                return os.path.join(AUDIO_DIR, title_matches[0])
+            elif len(title_matches) > 1:
+                # 가장 먼저 발견된 항목 사용 (번호 매칭보다 낮은 우선순위)
+                return os.path.join(AUDIO_DIR, title_matches[0])
+
     return None
 
 
