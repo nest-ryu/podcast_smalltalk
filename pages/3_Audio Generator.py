@@ -827,6 +827,39 @@ if st.session_state.videos:
                                 # 상대 경로로 변환
                                 rel_path = os.path.relpath(final_path, BASE_DIR).replace('\\', '/')
                                 
+                                # Git 사용자 정보 확인 및 설정
+                                git_user_name = subprocess.run(
+                                    ['git', 'config', 'user.name'],
+                                    cwd=BASE_DIR,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=5
+                                ).stdout.strip()
+                                
+                                git_user_email = subprocess.run(
+                                    ['git', 'config', 'user.email'],
+                                    cwd=BASE_DIR,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=5
+                                ).stdout.strip()
+                                
+                                # 사용자 정보가 없으면 기본값 설정
+                                if not git_user_name:
+                                    subprocess.run(
+                                        ['git', 'config', 'user.name', 'Podcast Smalltalk Bot'],
+                                        cwd=BASE_DIR,
+                                        capture_output=True,
+                                        timeout=5
+                                    )
+                                if not git_user_email:
+                                    subprocess.run(
+                                        ['git', 'config', 'user.email', 'podcast-smalltalk@example.com'],
+                                        cwd=BASE_DIR,
+                                        capture_output=True,
+                                        timeout=5
+                                    )
+                                
                                 # 1. git add
                                 git_add_result = subprocess.run(
                                     ['git', 'add', rel_path],
