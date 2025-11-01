@@ -698,9 +698,9 @@ st.markdown("YouTube에서 다운로드하고 회화 부분을 추출합니다."
 # YouTube 다운로더 초기화
 # ---------------------------
 try:
-if 'downloader' not in st.session_state:
-    st.session_state.downloader = YouTubeAudioDownloader(download_dir=TEMP_DOWNLOAD_DIR)
-downloader = st.session_state.downloader
+    if 'downloader' not in st.session_state:
+        st.session_state.downloader = YouTubeAudioDownloader(download_dir=TEMP_DOWNLOAD_DIR)
+    downloader = st.session_state.downloader
 except Exception as e:
     st.error(f"❌ 다운로더 초기화 실패: {e}")
     st.stop()
