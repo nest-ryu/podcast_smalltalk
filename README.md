@@ -159,10 +159,15 @@ PDF 파일은 다음 형식 중 하나를 지원합니다:
 
 2. **Streamlit Cloud에 Token 설정:**
    - Streamlit Cloud → App Settings → Secrets
-   - 다음 내용 추가:
-     ```toml
-     GITHUB_TOKEN = "your_token_here"
-     ```
+   - 다음 내용 추가 (두 페이지 모두에서 사용됨: Workbook Upload, Audio Generator):
+    ```toml
+    # 필수: GitHub Personal Access Token (repo 권한)
+    GITHUB_TOKEN = "your_token_here"
+
+    # 선택: 저장소 강제 지정 (origin URL 파싱이 어려운 환경에서 권장)
+    # 형식: "owner/repo"
+    GITHUB_REPO = "nest-ryu/podcast_smalltalk"
+    ```
 
 3. **로컬 환경에서 사용 시:**
    - 환경 변수로 설정:
