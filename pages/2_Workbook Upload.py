@@ -1,9 +1,79 @@
 import os
 import subprocess
+import base64
+import json as _json
+import urllib.request
+import urllib.error
 import streamlit as st
 from config import PDF_DIR, AUDIO_DIR, EPISODES_JSON, BASE_DIR
 from make_episodes_json import add_pdf_to_json, build_json_from_all_pdfs
 
+
+def upload_to_github_via_api(local_path: str, rel_repo_path: str, commit_message: str, branch: str = "main") -> bool:
+    try:
+        token = None
+        try:
+            token = st.secrets.get("GITHUB_TOKEN") if hasattr(st, 'secrets') else None
+        except Exception:
+            token = os.environ.get('GITHUB_TOKEN')
+        if not token:
+            return False
+
+        repo = None
+        try:
+            repo = st.secrets.get("GITHUB_REPO") if hasattr(st, 'secrets') else None
+        except Exception:
+            repo = None
+        if not repo:
+            try:
+                res = subprocess.run(
+                    ['git', 'config', '--get', 'remote.origin.url'],
+                    cwd=BASE_DIR,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                url = res.stdout.strip()
+                if url.startswith('https://github.com/'):
+                    repo = url.split('https://github.com/')[1]
+                    if repo.endswith('.git'):
+                        repo = repo[:-4]
+            except Exception:
+                repo = None
+        if not repo:
+            return False
+
+        with open(local_path, 'rb') as rf:
+            content_b64 = base64.b64encode(rf.read()).decode('utf-8')
+
+        api = f"https://api.github.com/repos/{repo}/contents/{rel_repo_path}"
+        headers = {
+            'Authorization': f'token {token}',
+            'User-Agent': 'podcast-smalltalk-app',
+            'Accept': 'application/vnd.github+json',
+        }
+        sha = None
+        try:
+            req_meta = urllib.request.Request(api + f"?ref={branch}", headers=headers)
+            with urllib.request.urlopen(req_meta) as resp:
+                meta = _json.loads(resp.read().decode('utf-8'))
+                sha = meta.get('sha')
+        except Exception:
+            sha = None
+        body = {'message': commit_message, 'content': content_b64, 'branch': branch}
+        if sha:
+            body['sha'] = sha
+        data = _json.dumps(body).encode('utf-8')
+        req_put = urllib.request.Request(
+            api,
+            data=data,
+            headers={**headers, 'Content-Type': 'application/json'},
+            method='PUT',
+        )
+        with urllib.request.urlopen(req_put) as resp:
+            return 200 <= resp.getcode() < 300
+    except Exception:
+        return False
 
 def count_git_tracked_files(directory: str, extensions: tuple) -> int:
     """Git에 추적되는 파일만 카운트 (서버에 존재하는 파일)"""
@@ -165,6 +235,15 @@ if uploaded_pdf is not None:
                         rel_pdf_path = os.path.relpath(pdf_path, BASE_DIR).replace('\\', '/')
                         rel_json_path = os.path.relpath(EPISODES_JSON, BASE_DIR).replace('\\', '/')
                         
+                        # GitHub API 업로드 (선택)
+                        try:
+                            rel_repo_pdf = os.path.relpath(pdf_path, BASE_DIR).replace('\\', '/')
+                            upload_to_github_via_api(pdf_path, rel_repo_pdf, f"Add PDF file: {uploaded_pdf.name}")
+                            rel_repo_json = os.path.relpath(EPISODES_JSON, BASE_DIR).replace('\\', '/')
+                            upload_to_github_via_api(EPISODES_JSON, rel_repo_json, "Update episodes.json")
+                        except Exception:
+                            pass
+
                         # 1. git add
                         subprocess.run(
                             ['git', 'add', rel_pdf_path, rel_json_path],
@@ -424,6 +503,12 @@ if uploaded_audio is not None:
                     # 상대 경로로 변환
                     rel_audio_path = os.path.relpath(audio_path, BASE_DIR).replace('\\', '/')
                     
+                    # GitHub API 업로드 (선택)
+                    try:
+                        upload_to_github_via_api(audio_path, rel_audio_path, f"Add audio file: {uploaded_audio.name}")
+                    except Exception:
+                        pass
+
                     # 1. git add
                     subprocess.run(
                         ['git', 'add', rel_audio_path],

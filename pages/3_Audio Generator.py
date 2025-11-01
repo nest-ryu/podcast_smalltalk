@@ -14,6 +14,10 @@ import unicodedata
 from typing import List, Dict
 
 from functools import lru_cache
+import base64
+import json as _json
+import urllib.request
+import urllib.error
 
 try:
     from yt_dlp import YoutubeDL
@@ -43,6 +47,86 @@ except Exception:
 # ============================================================================
 # 내장 함수들 (원래 외부 모듈에서 가져오던 것들)
 # ============================================================================
+
+def upload_to_github_via_api(local_path: str, rel_repo_path: str, commit_message: str, branch: str = "main") -> bool:
+    """GITHUB_TOKEN을 사용해 GitHub Contents API로 파일을 업로드/갱신한다.
+    성공 시 True, 실패 시 False 반환.
+    """
+    try:
+        # Token 조회
+        token = None
+        try:
+            token = st.secrets.get("GITHUB_TOKEN") if hasattr(st, 'secrets') else None
+        except Exception:
+            token = os.environ.get('GITHUB_TOKEN')
+        if not token:
+            return False
+
+        # Repository 식별 (secrets에 우선, 없으면 origin에서 파싱)
+        repo = None
+        try:
+            repo = st.secrets.get("GITHUB_REPO") if hasattr(st, 'secrets') else None
+        except Exception:
+            repo = None
+        if not repo:
+            try:
+                res = subprocess.run(
+                    ['git', 'config', '--get', 'remote.origin.url'],
+                    cwd=BASE_DIR,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                url = res.stdout.strip()
+                if url.startswith('https://github.com/'):
+                    repo = url.split('https://github.com/')[1]
+                    if repo.endswith('.git'):
+                        repo = repo[:-4]
+            except Exception:
+                repo = None
+        if not repo:
+            return False
+
+        # 파일 읽어서 base64 인코딩
+        with open(local_path, 'rb') as rf:
+            content_b64 = base64.b64encode(rf.read()).decode('utf-8')
+
+        api = f"https://api.github.com/repos/{repo}/contents/{rel_repo_path}"
+        headers = {
+            'Authorization': f'token {token}',
+            'User-Agent': 'podcast-smalltalk-app',
+            'Accept': 'application/vnd.github+json',
+        }
+
+        # 기존 파일 sha 조회 (있으면 업데이트)
+        sha = None
+        try:
+            req_meta = urllib.request.Request(api + f"?ref={branch}", headers=headers)
+            with urllib.request.urlopen(req_meta) as resp:
+                meta = _json.loads(resp.read().decode('utf-8'))
+                sha = meta.get('sha')
+        except Exception:
+            sha = None
+
+        body = {
+            'message': commit_message,
+            'content': content_b64,
+            'branch': branch,
+        }
+        if sha:
+            body['sha'] = sha
+
+        data = _json.dumps(body).encode('utf-8')
+        req_put = urllib.request.Request(
+            api,
+            data=data,
+            headers={**headers, 'Content-Type': 'application/json'},
+            method='PUT',
+        )
+        with urllib.request.urlopen(req_put) as resp:
+            return 200 <= resp.getcode() < 300
+    except Exception:
+        return False
 # ============================================================================
 # ffmpeg/ffprobe 경로 처리 헬퍼
 # ============================================================================
@@ -820,6 +904,14 @@ if st.session_state.videos:
                             except Exception:
                                 pass
                         
+                        # GitHub API 업로드 (선택)
+                        try:
+                            rel_repo_path = os.path.relpath(final_path, BASE_DIR).replace('\\', '/')
+                            if upload_to_github_via_api(final_path, rel_repo_path, f"Add audio file: {final_filename}"):
+                                st.success("✅ GitHub(API) 업로드 완료")
+                        except Exception:
+                            pass
+
                         # Git에 파일 추가, 커밋, 푸시 (저장소에 저장)
                         try:
                             git_dir = os.path.join(BASE_DIR, '.git')
