@@ -270,6 +270,31 @@ def refine_end_by_transcript(tr_result, min_words_per_seg: int = 3, tail_silence
         return None
 
 
+def refine_bounds_by_transcript(tr_result, min_words_per_seg: int = 2, pre_roll: float = 0.25, post_roll: float = 0.25) -> tuple[float, float] | None:
+    """Whisper 결과에서 실제 발화 구간의 시작/끝을 찾아 앞뒤 음악 제거용 경계를 반환한다.
+    반환 값은 (start_sec, end_sec). 실패 시 None.
+    """
+    try:
+        segments = tr_result.get("segments", []) or []
+        if not segments:
+            return None
+        def wc(t: str) -> int:
+            return len(re.findall(r"\b\w+\b", t))
+        speech_like = [s for s in segments if wc(s.get("text", "")) >= min_words_per_seg]
+        if not speech_like:
+            # 단어 수 기준을 못 만족하면 모든 세그먼트 기준으로
+            speech_like = segments
+        first_start = float(speech_like[0].get("start", 0.0) or 0.0)
+        last_end = float(speech_like[-1].get("end", 0.0) or 0.0)
+        total_duration = float(tr_result.get("duration") or last_end or 0.0)
+        start_refined = max(0.0, first_start - pre_roll)
+        end_refined = min(total_duration, last_end + post_roll if last_end else total_duration)
+        if end_refined <= start_refined:
+            return None
+        return (start_refined, end_refined)
+    except Exception:
+        return None
+
 def derive_base_name(src: Path) -> str:
     """출력 파일명 생성 (예: '75. paranoid')"""
     stem = src.stem
@@ -711,18 +736,20 @@ def run_podcast_cutter_pipeline(src: Path):
             ]
             subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
-        # Step 4: Whisper로 음성 인식 및 끝부분 보정
+        # Step 4: Whisper로 음성 인식 및 앞/뒤 음악 제거용 보정
         st.write("  - 음성 인식 중...")
         tr = transcribe_audio_whisper(tmp_precise, model_size="base")
-        refined_end = refine_end_by_transcript(tr)
-        
-        if refined_end is not None:
-            st.write(f"  - 끝부분 보정 적용: {refined_end:.2f}초까지 재컷팅...")
+        bounds = refine_bounds_by_transcript(tr, min_words_per_seg=2, pre_roll=0.25, post_roll=0.25)
+        if bounds is not None:
+            start_b, end_b = bounds
+            st.write(f"  - 발화 구간 기준 보정: {start_b:.2f}s ~ {end_b:.2f}s")
+            cut_dur = max(0.2, end_b - start_b)
             tmp_precise_ref = src.parent / "_st_tmp_precise_refined.mp3"
             cmd2 = [
                 ffmpeg_bin, "-y",
+                "-ss", str(start_b),
+                "-t", str(cut_dur),
                 "-i", str(tmp_precise),
-                "-t", str(max(0.2, refined_end)),
                 "-acodec", "libmp3lame", "-b:a", "192k",
                 str(tmp_precise_ref),
             ]
