@@ -295,6 +295,28 @@ def refine_bounds_by_transcript(tr_result, min_words_per_seg: int = 2, pre_roll:
     except Exception:
         return None
 
+def refine_tail_by_transcript(tr_result, min_words_per_seg: int = 2, post_roll: float = 0.25) -> float | None:
+    """Whisper 결과에서 마지막 발화 종료 시간을 찾아, post-roll 만큼만 남겨 자를 길이(초)를 반환한다.
+    반환 값은 자를 총 길이(t)를 의미. 실패 시 None.
+    """
+    try:
+        segments = tr_result.get("segments", []) or []
+        if not segments:
+            return None
+        def wc(t: str) -> int:
+            return len(re.findall(r"\b\w+\b", t))
+        speech_like = [s for s in segments if wc(s.get("text", "")) >= min_words_per_seg]
+        if not speech_like:
+            speech_like = segments
+        last_end = float(speech_like[-1].get("end", 0.0) or 0.0)
+        dur = float(tr_result.get("duration") or last_end or 0.0)
+        cut_to = min(dur, max(0.2, last_end + post_roll))
+        if cut_to <= 0.0:
+            return None
+        return cut_to
+    except Exception:
+        return None
+
 def derive_base_name(src: Path) -> str:
     """출력 파일명 생성 (예: '75. paranoid')"""
     stem = src.stem
@@ -736,20 +758,17 @@ def run_podcast_cutter_pipeline(src: Path):
             ]
             subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
-        # Step 4: Whisper로 음성 인식 및 앞/뒤 음악 제거용 보정
+        # Step 4: Whisper로 음성 인식 및 끝부분(아웃트로 음악) 보정만 적용
         st.write("  - 음성 인식 중...")
         tr = transcribe_audio_whisper(tmp_precise, model_size="base")
-        bounds = refine_bounds_by_transcript(tr, min_words_per_seg=2, pre_roll=0.25, post_roll=0.25)
-        if bounds is not None:
-            start_b, end_b = bounds
-            st.write(f"  - 발화 구간 기준 보정: {start_b:.2f}s ~ {end_b:.2f}s")
-            cut_dur = max(0.2, end_b - start_b)
+        tail_t = refine_tail_by_transcript(tr, min_words_per_seg=2, post_roll=0.25)
+        if tail_t is not None:
+            st.write(f"  - 끝부분 보정 적용: {tail_t:.2f}초까지 컷팅...")
             tmp_precise_ref = src.parent / "_st_tmp_precise_refined.mp3"
             cmd2 = [
                 ffmpeg_bin, "-y",
-                "-ss", str(start_b),
-                "-t", str(cut_dur),
                 "-i", str(tmp_precise),
+                "-t", str(max(0.2, tail_t)),
                 "-acodec", "libmp3lame", "-b:a", "192k",
                 str(tmp_precise_ref),
             ]
