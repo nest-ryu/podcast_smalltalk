@@ -6,13 +6,14 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import streamlit as st
-from config import PDF_DIR, AUDIO_DIR, BASE_DIR
+from config import PDF_DIR, AUDIO_DIR, BASE_DIR, EPISODES_JSON
+from make_episodes_json import add_pdf_to_json, build_json_from_all_pdfs
 
 
 def upload_to_github_via_api(local_path: str, rel_repo_path: str, commit_message: str, branch: str = "main") -> bool:
     """GITHUB_TOKEN을 사용해 GitHub Contents API로 파일을 업로드/갱신한다.
     성공 시 True, 실패 시 False 반환.
-    오디오 생성 페이지와 완전히 동일한 기능을 가진 함수.
+    오디오 생성 페이지와 완전히 동일한 함수.
     """
     try:
         # Token 조회
@@ -192,143 +193,275 @@ if uploaded_pdf is not None:
     file_size = uploaded_pdf.size / (1024 * 1024)  # MB
     st.info(f"📄 선택된 파일: {uploaded_pdf.name} ({file_size:.2f} MB)")
     
-    if st.button("💾 PDF 파일 저장", type="primary", use_container_width=True):
-        try:
-            # PDF 저장
-            pdf_path = os.path.join(PDF_DIR, uploaded_pdf.name)
-            with open(pdf_path, "wb") as f:
-                f.write(uploaded_pdf.getbuffer())
-            
-            st.success(f"✅ PDF 파일이 저장되었습니다: {pdf_path}")
-            
-            # Git에 파일 추가 및 커밋
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("💾 PDF 파일 저장 및 JSON 업데이트", type="primary", use_container_width=True):
             try:
-                git_dir = os.path.join(BASE_DIR, '.git')
-                if os.path.exists(git_dir):
-                    # Git 사용자 정보 확인 및 설정
-                    git_user_name = subprocess.run(
-                        ['git', 'config', 'user.name'],
-                        cwd=BASE_DIR,
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    ).stdout.strip()
-                    
-                    git_user_email = subprocess.run(
-                        ['git', 'config', 'user.email'],
-                        cwd=BASE_DIR,
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    ).stdout.strip()
-                    
-                    # 사용자 정보가 없으면 기본값 설정
-                    if not git_user_name:
-                        subprocess.run(
-                            ['git', 'config', 'user.name', 'Podcast Smalltalk Bot'],
+                # PDF 저장
+                pdf_path = os.path.join(PDF_DIR, uploaded_pdf.name)
+                with open(pdf_path, "wb") as f:
+                    f.write(uploaded_pdf.getbuffer())
+                
+                st.success(f"✅ PDF 파일이 저장되었습니다: {pdf_path}")
+                
+                # JSON 파일 업데이트
+                json_updated = False
+                try:
+                    with st.spinner("📝 JSON 파일 업데이트 중..."):
+                        new_lessons_count = add_pdf_to_json(pdf_path)
+                        st.success(f"✅ JSON 파일 업데이트 완료 ({new_lessons_count}개 레슨 추가)")
+                        json_updated = True
+                except Exception as json_error:
+                    st.warning(f"⚠️ JSON 업데이트 실패: {json_error}")
+                    # JSON 업데이트 실패해도 계속 진행
+                
+                # Git에 파일 추가 및 커밋
+                try:
+                    git_dir = os.path.join(BASE_DIR, '.git')
+                    if os.path.exists(git_dir):
+                        # Git 사용자 정보 확인 및 설정
+                        git_user_name = subprocess.run(
+                            ['git', 'config', 'user.name'],
                             cwd=BASE_DIR,
                             capture_output=True,
+                            text=True,
                             timeout=5
-                        )
-                    if not git_user_email:
-                        subprocess.run(
-                            ['git', 'config', 'user.email', 'podcast-smalltalk@example.com'],
+                        ).stdout.strip()
+                        
+                        git_user_email = subprocess.run(
+                            ['git', 'config', 'user.email'],
                             cwd=BASE_DIR,
                             capture_output=True,
+                            text=True,
                             timeout=5
-                        )
-                    
-                    # 상대 경로로 변환
-                    rel_file_path = os.path.relpath(pdf_path, BASE_DIR).replace('\\', '/')
-                    
-                    # GitHub API 업로드 (선택)
-                    try:
-                        upload_to_github_via_api(pdf_path, rel_file_path, f"Add PDF file: {uploaded_pdf.name}")
-                    except Exception:
-                        pass
+                        ).stdout.strip()
+                        
+                        # 사용자 정보가 없으면 기본값 설정
+                        if not git_user_name:
+                            subprocess.run(
+                                ['git', 'config', 'user.name', 'Podcast Smalltalk Bot'],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                timeout=5
+                            )
+                        if not git_user_email:
+                            subprocess.run(
+                                ['git', 'config', 'user.email', 'podcast-smalltalk@example.com'],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                timeout=5
+                            )
+                        
+                        # 상대 경로로 변환
+                        rel_file_path = os.path.relpath(pdf_path, BASE_DIR).replace('\\', '/')
+                        
+                        # GitHub API 업로드 (선택)
+                        try:
+                            upload_to_github_via_api(pdf_path, rel_file_path, f"Add PDF file: {uploaded_pdf.name}")
+                        except Exception:
+                            pass
+                        
+                        # JSON 파일도 Git에 추가 (업데이트된 경우)
+                        if json_updated and os.path.exists(EPISODES_JSON):
+                            rel_json_path = os.path.relpath(EPISODES_JSON, BASE_DIR).replace('\\', '/')
+                            try:
+                                upload_to_github_via_api(EPISODES_JSON, rel_json_path, f"Update episodes.json: {uploaded_pdf.name}")
+                            except Exception:
+                                pass
 
-                    # 1. git add
-                    git_add_result = subprocess.run(
-                        ['git', 'add', rel_file_path],
-                        cwd=BASE_DIR,
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
-                    
-                    if git_add_result.returncode == 0:
-                        # 2. git commit
-                        commit_msg = f"Add PDF file: {uploaded_pdf.name}"
-                        git_commit_result = subprocess.run(
-                            ['git', 'commit', '-m', commit_msg],
+                        # 1. git add (PDF 파일)
+                        git_add_result = subprocess.run(
+                            ['git', 'add', rel_file_path],
                             cwd=BASE_DIR,
                             capture_output=True,
                             text=True,
                             timeout=5
                         )
                         
-                        if git_commit_result.returncode == 0:
-                            # 3. git push (GITHUB_TOKEN 사용 시 자동 푸시)
-                            try:
-                                github_token = None
+                        # JSON 파일도 git add
+                        if json_updated and os.path.exists(EPISODES_JSON):
+                            rel_json_path = os.path.relpath(EPISODES_JSON, BASE_DIR).replace('\\', '/')
+                            subprocess.run(
+                                ['git', 'add', rel_json_path],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
+                        
+                        if git_add_result.returncode == 0:
+                            # 2. git commit
+                            commit_msg = f"Add PDF file: {uploaded_pdf.name}"
+                            git_commit_result = subprocess.run(
+                                ['git', 'commit', '-m', commit_msg],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
+                            
+                            if git_commit_result.returncode == 0:
+                                # 3. git push (GITHUB_TOKEN 사용 시 자동 푸시)
                                 try:
-                                    github_token = st.secrets.get("GITHUB_TOKEN") if hasattr(st, 'secrets') else None
+                                    github_token = None
+                                    try:
+                                        github_token = st.secrets.get("GITHUB_TOKEN") if hasattr(st, 'secrets') else None
+                                    except Exception:
+                                        github_token = os.environ.get('GITHUB_TOKEN')
+                                    
+                                    remote_url_result = subprocess.run(
+                                        ['git', 'config', '--get', 'remote.origin.url'],
+                                        cwd=BASE_DIR,
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=5
+                                    )
+                                    original_url = remote_url_result.stdout.strip() if remote_url_result.returncode == 0 else ''
+                                    
+                                    if github_token and original_url.startswith('https://'):
+                                        token_url = original_url.replace('https://', f'https://{github_token}@')
+                                        subprocess.run(
+                                            ['git', 'remote', 'set-url', 'origin', token_url],
+                                            cwd=BASE_DIR,
+                                            capture_output=True,
+                                            timeout=5
+                                        )
+                                    
+                                    push_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
+                                    push_result = subprocess.run(
+                                        ['git', 'push', 'origin', 'main'],
+                                        cwd=BASE_DIR,
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=30,
+                                        env=push_env
+                                    )
+                                    
+                                    # 원래 URL 복원
+                                    if github_token and original_url:
+                                        subprocess.run(
+                                            ['git', 'remote', 'set-url', 'origin', original_url],
+                                            cwd=BASE_DIR,
+                                            capture_output=True,
+                                            timeout=5
+                                        )
+                                    
+                                    if push_result.returncode == 0:
+                                        st.success("✅ GitHub로 자동 업로드 완료")
                                 except Exception:
-                                    github_token = os.environ.get('GITHUB_TOKEN')
+                                    # 푸시 실패는 조용히 무시 (로컬 커밋은 이미 완료됨)
+                                    pass
+                            else:
+                                # 커밋 실패 - 파일은 여전히 저장되어 있음
+                                commit_error = git_commit_result.stderr or git_commit_result.stdout
+                                st.info(f"ℹ️ 파일은 저장되었습니다. Git 커밋 실패: {commit_error[:200] if commit_error else '알 수 없는 오류'}")
+                        else:
+                            st.warning(f"⚠️ Git 추가 실패: {git_add_result.stderr[:200] if git_add_result.stderr else '알 수 없는 오류'}")
+                except Exception:
+                    pass  # Git 명령 실패 시 무시
+            
+            except Exception as e:
+                st.error(f"❌ 오류 발생: {e}")
+    
+    with col2:
+        if st.button("🔄 전체 JSON 재생성", use_container_width=True):
+            try:
+                with st.spinner("📝 모든 PDF 파일에서 JSON 재생성 중..."):
+                    build_json_from_all_pdfs()
+                    # JSON 파일의 레슨 수 확인
+                    if os.path.exists(EPISODES_JSON):
+                        with open(EPISODES_JSON, "r", encoding="utf-8") as f:
+                            episodes = _json.load(f)
+                        st.success(f"✅ 전체 JSON 재생성 완료 (총 {len(episodes)}개 레슨)")
+                        
+                        # Git에 JSON 파일 추가 및 커밋
+                        try:
+                            git_dir = os.path.join(BASE_DIR, '.git')
+                            if os.path.exists(git_dir):
+                                rel_json_path = os.path.relpath(EPISODES_JSON, BASE_DIR).replace('\\', '/')
                                 
-                                remote_url_result = subprocess.run(
-                                    ['git', 'config', '--get', 'remote.origin.url'],
+                                # GitHub API 업로드
+                                try:
+                                    upload_to_github_via_api(EPISODES_JSON, rel_json_path, "Rebuild episodes.json from all PDFs")
+                                except Exception:
+                                    pass
+                                
+                                # git add
+                                git_add_result = subprocess.run(
+                                    ['git', 'add', rel_json_path],
                                     cwd=BASE_DIR,
                                     capture_output=True,
                                     text=True,
                                     timeout=5
                                 )
-                                original_url = remote_url_result.stdout.strip() if remote_url_result.returncode == 0 else ''
                                 
-                                if github_token and original_url.startswith('https://'):
-                                    token_url = original_url.replace('https://', f'https://{github_token}@')
-                                    subprocess.run(
-                                        ['git', 'remote', 'set-url', 'origin', token_url],
+                                if git_add_result.returncode == 0:
+                                    # git commit
+                                    git_commit_result = subprocess.run(
+                                        ['git', 'commit', '-m', 'Rebuild episodes.json from all PDFs'],
                                         cwd=BASE_DIR,
                                         capture_output=True,
+                                        text=True,
                                         timeout=5
                                     )
-                                
-                                push_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
-                                push_result = subprocess.run(
-                                    ['git', 'push', 'origin', 'main'],
-                                    cwd=BASE_DIR,
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=30,
-                                    env=push_env
-                                )
-                                
-                                # 원래 URL 복원
-                                if github_token and original_url:
-                                    subprocess.run(
-                                        ['git', 'remote', 'set-url', 'origin', original_url],
-                                        cwd=BASE_DIR,
-                                        capture_output=True,
-                                        timeout=5
-                                    )
-                                
-                                if push_result.returncode == 0:
-                                    st.success("✅ GitHub로 자동 업로드 완료")
-                            except Exception:
-                                # 푸시 실패는 조용히 무시 (로컬 커밋은 이미 완료됨)
-                                pass
-                        else:
-                            # 커밋 실패 - 파일은 여전히 저장되어 있음
-                            commit_error = git_commit_result.stderr or git_commit_result.stdout
-                            st.info(f"ℹ️ 파일은 저장되었습니다. Git 커밋 실패: {commit_error[:200] if commit_error else '알 수 없는 오류'}")
+                                    
+                                    if git_commit_result.returncode == 0:
+                                        # git push
+                                        try:
+                                            github_token = None
+                                            try:
+                                                github_token = st.secrets.get("GITHUB_TOKEN") if hasattr(st, 'secrets') else None
+                                            except Exception:
+                                                github_token = os.environ.get('GITHUB_TOKEN')
+                                            
+                                            remote_url_result = subprocess.run(
+                                                ['git', 'config', '--get', 'remote.origin.url'],
+                                                cwd=BASE_DIR,
+                                                capture_output=True,
+                                                text=True,
+                                                timeout=5
+                                            )
+                                            original_url = remote_url_result.stdout.strip() if remote_url_result.returncode == 0 else ''
+                                            
+                                            if github_token and original_url.startswith('https://'):
+                                                token_url = original_url.replace('https://', f'https://{github_token}@')
+                                                subprocess.run(
+                                                    ['git', 'remote', 'set-url', 'origin', token_url],
+                                                    cwd=BASE_DIR,
+                                                    capture_output=True,
+                                                    timeout=5
+                                                )
+                                            
+                                            push_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
+                                            push_result = subprocess.run(
+                                                ['git', 'push', 'origin', 'main'],
+                                                cwd=BASE_DIR,
+                                                capture_output=True,
+                                                text=True,
+                                                timeout=30,
+                                                env=push_env
+                                            )
+                                            
+                                            # 원래 URL 복원
+                                            if github_token and original_url:
+                                                subprocess.run(
+                                                    ['git', 'remote', 'set-url', 'origin', original_url],
+                                                    cwd=BASE_DIR,
+                                                    capture_output=True,
+                                                    timeout=5
+                                                )
+                                            
+                                            if push_result.returncode == 0:
+                                                st.success("✅ GitHub로 자동 업로드 완료")
+                                        except Exception:
+                                            pass
+                        except Exception:
+                            pass
                     else:
-                        st.warning(f"⚠️ Git 추가 실패: {git_add_result.stderr[:200] if git_add_result.stderr else '알 수 없는 오류'}")
-            except Exception:
-                pass  # Git 명령 실패 시 무시
-            
-        except Exception as e:
-            st.error(f"❌ 오류 발생: {e}")
+                        st.success("✅ 전체 JSON 재생성 완료")
+            except Exception as json_error:
+                st.error(f"❌ JSON 재생성 실패: {json_error}")
 
 
 
