@@ -881,7 +881,7 @@ if st.session_state.videos:
                                     )
                                     
                                     if git_commit_result.returncode == 0:
-                                        # 3. git push (선택 사항, 실패해도 무방)
+                                        # 3. git push
                                         try:
                                             git_push_result = subprocess.run(
                                                 ['git', 'push', 'origin', 'main'],
@@ -894,10 +894,17 @@ if st.session_state.videos:
                                             
                                             if git_push_result.returncode == 0:
                                                 st.success("✅ GitHub 저장소에 파일이 저장되었습니다.")
-                                            # 푸시 실패해도 파일은 저장되어 있으므로 조용히 처리
+                                            else:
+                                                # 푸시 실패 원인 표시
+                                                error_msg = git_push_result.stderr or git_push_result.stdout or "알 수 없는 오류"
+                                                if 'Username' in error_msg or 'authentication' in error_msg.lower() or 'Permission denied' in error_msg:
+                                                    st.warning("⚠️ GitHub 인증 실패: 서버 환경에서는 자동 푸시가 제한될 수 있습니다. 파일은 로컬에 저장되었습니다.")
+                                                elif 'fatal' in error_msg.lower():
+                                                    st.warning(f"⚠️ GitHub 푸시 실패: {error_msg[:300]}")
+                                                else:
+                                                    st.warning(f"⚠️ GitHub 푸시 실패 (파일은 로컬에 저장됨)")
                                         except Exception as push_error:
-                                            # 푸시 실패해도 파일은 저장되어 있으므로 조용히 처리
-                                            pass
+                                            st.warning(f"⚠️ Git 푸시 중 오류 발생: {str(push_error)[:200]}")
                                     else:
                                         # 커밋 실패 - 파일은 여전히 저장되어 있음
                                         commit_error = git_commit_result.stderr
