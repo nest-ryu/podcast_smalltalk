@@ -123,6 +123,69 @@ if uploaded_pdf is not None:
                     add_pdf_to_json(pdf_path)
                 
                 st.success("✅ JSON 파일이 업데이트되었습니다!")
+                
+                # Git에 파일 추가 및 커밋
+                try:
+                    git_dir = os.path.join(BASE_DIR, '.git')
+                    if os.path.exists(git_dir):
+                        # Git 사용자 정보 확인 및 설정
+                        git_user_name = subprocess.run(
+                            ['git', 'config', 'user.name'],
+                            cwd=BASE_DIR,
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        ).stdout.strip()
+                        
+                        git_user_email = subprocess.run(
+                            ['git', 'config', 'user.email'],
+                            cwd=BASE_DIR,
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        ).stdout.strip()
+                        
+                        # 사용자 정보가 없으면 기본값 설정
+                        if not git_user_name:
+                            subprocess.run(
+                                ['git', 'config', 'user.name', 'Podcast Smalltalk Bot'],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                timeout=5
+                            )
+                        if not git_user_email:
+                            subprocess.run(
+                                ['git', 'config', 'user.email', 'podcast-smalltalk@example.com'],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                timeout=5
+                            )
+                        
+                        # 상대 경로로 변환
+                        rel_pdf_path = os.path.relpath(pdf_path, BASE_DIR).replace('\\', '/')
+                        rel_json_path = os.path.relpath(EPISODES_JSON, BASE_DIR).replace('\\', '/')
+                        
+                        # 1. git add
+                        subprocess.run(
+                            ['git', 'add', rel_pdf_path, rel_json_path],
+                            cwd=BASE_DIR,
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        
+                        # 2. git commit
+                        commit_msg = f"Add PDF file: {uploaded_pdf.name}"
+                        subprocess.run(
+                            ['git', 'commit', '-m', commit_msg],
+                            cwd=BASE_DIR,
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                except Exception:
+                    pass  # Git 명령 실패 시 무시
+                
                 st.info("💡 메인 페이지로 돌아가서 새로 업로드된 학습지를 확인하세요.")
                 
             except Exception as e:
@@ -134,6 +197,68 @@ if uploaded_pdf is not None:
                 with st.spinner("모든 PDF 파일로부터 JSON 재생성 중..."):
                     build_json_from_all_pdfs()
                 st.success("✅ 전체 JSON 파일이 재생성되었습니다!")
+                
+                # Git에 JSON 파일 커밋
+                try:
+                    git_dir = os.path.join(BASE_DIR, '.git')
+                    if os.path.exists(git_dir):
+                        # Git 사용자 정보 확인 및 설정
+                        git_user_name = subprocess.run(
+                            ['git', 'config', 'user.name'],
+                            cwd=BASE_DIR,
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        ).stdout.strip()
+                        
+                        git_user_email = subprocess.run(
+                            ['git', 'config', 'user.email'],
+                            cwd=BASE_DIR,
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        ).stdout.strip()
+                        
+                        # 사용자 정보가 없으면 기본값 설정
+                        if not git_user_name:
+                            subprocess.run(
+                                ['git', 'config', 'user.name', 'Podcast Smalltalk Bot'],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                timeout=5
+                            )
+                        if not git_user_email:
+                            subprocess.run(
+                                ['git', 'config', 'user.email', 'podcast-smalltalk@example.com'],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                timeout=5
+                            )
+                        
+                        # 상대 경로로 변환
+                        rel_json_path = os.path.relpath(EPISODES_JSON, BASE_DIR).replace('\\', '/')
+                        
+                        # 1. git add
+                        subprocess.run(
+                            ['git', 'add', rel_json_path],
+                            cwd=BASE_DIR,
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        
+                        # 2. git commit
+                        commit_msg = "Update episodes.json: regenerate from all PDFs"
+                        subprocess.run(
+                            ['git', 'commit', '-m', commit_msg],
+                            cwd=BASE_DIR,
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                except Exception:
+                    pass  # Git 명령 실패 시 무시
+                    
             except Exception as e:
                 st.error(f"❌ 오류 발생: {e}")
 
@@ -166,6 +291,67 @@ if uploaded_audio is not None:
                 f.write(uploaded_audio.getbuffer())
             
             st.success(f"✅ 오디오 파일이 저장되었습니다: {audio_path}")
+            
+            # Git에 파일 추가 및 커밋
+            try:
+                git_dir = os.path.join(BASE_DIR, '.git')
+                if os.path.exists(git_dir):
+                    # Git 사용자 정보 확인 및 설정
+                    git_user_name = subprocess.run(
+                        ['git', 'config', 'user.name'],
+                        cwd=BASE_DIR,
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    ).stdout.strip()
+                    
+                    git_user_email = subprocess.run(
+                        ['git', 'config', 'user.email'],
+                        cwd=BASE_DIR,
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    ).stdout.strip()
+                    
+                    # 사용자 정보가 없으면 기본값 설정
+                    if not git_user_name:
+                        subprocess.run(
+                            ['git', 'config', 'user.name', 'Podcast Smalltalk Bot'],
+                            cwd=BASE_DIR,
+                            capture_output=True,
+                            timeout=5
+                        )
+                    if not git_user_email:
+                        subprocess.run(
+                            ['git', 'config', 'user.email', 'podcast-smalltalk@example.com'],
+                            cwd=BASE_DIR,
+                            capture_output=True,
+                            timeout=5
+                        )
+                    
+                    # 상대 경로로 변환
+                    rel_audio_path = os.path.relpath(audio_path, BASE_DIR).replace('\\', '/')
+                    
+                    # 1. git add
+                    subprocess.run(
+                        ['git', 'add', rel_audio_path],
+                        cwd=BASE_DIR,
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    
+                    # 2. git commit
+                    commit_msg = f"Add audio file: {uploaded_audio.name}"
+                    subprocess.run(
+                        ['git', 'commit', '-m', commit_msg],
+                        cwd=BASE_DIR,
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+            except Exception:
+                pass  # Git 명령 실패 시 무시
             
         except Exception as e:
             st.error(f"❌ 오류 발생: {e}")
