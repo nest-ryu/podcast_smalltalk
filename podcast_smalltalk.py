@@ -284,22 +284,27 @@ def find_audio_file_for_lesson(lesson_num, title_en="", title_ko=""):
             return os.path.join(AUDIO_DIR, audio_file)
     
     # 패턴 5: 번호가 달라도 제목이 일치하는 경우 (마지막 fallback)
+    # 주의: 여러 파일이 매칭될 경우 정확성을 위해 None 반환
     if not candidates:
         search_titles = [t for t in (normalized_title_en, normalized_title_ko) if t]
         if search_titles:
             title_matches = []
             for audio_file in audio_files:
                 normalized_file_title = extract_normalized_title_from_audio_file(audio_file)
-                if normalized_file_title and any(
-                    search_title in normalized_file_title or normalized_file_title in search_title
-                    for search_title in search_titles
-                ):
-                    title_matches.append(audio_file)
+                if normalized_file_title:
+                    # 정확한 제목 일치를 우선 확인
+                    for search_title in search_titles:
+                        # 제목이 완전히 일치하거나 서로 포함되는 경우
+                        if (search_title == normalized_file_title or
+                            (len(search_title) >= 3 and search_title in normalized_file_title) or
+                            (len(normalized_file_title) >= 3 and normalized_file_title in search_title)):
+                            title_matches.append(audio_file)
+                            break
+            
+            # 정확히 하나만 매칭된 경우만 반환 (여러 개면 None 반환하여 안전하게 처리)
             if len(title_matches) == 1:
                 return os.path.join(AUDIO_DIR, title_matches[0])
-            elif len(title_matches) > 1:
-                # 가장 먼저 발견된 항목 사용 (번호 매칭보다 낮은 우선순위)
-                return os.path.join(AUDIO_DIR, title_matches[0])
+            # 여러 개가 매칭되면 정확하지 않으므로 None 반환
 
     return None
 
