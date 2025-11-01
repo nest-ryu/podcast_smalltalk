@@ -455,7 +455,7 @@ if uploaded_audio is not None:
     if st.button("💾 오디오 파일 저장", type="primary", use_container_width=True):
         try:
             # 오디오 저장
-            audio_path = os.path.join(AUDIO_DIR, uploaded_audio.name)
+            audio_path = os.path.join(PDF_DIR, uploaded_audio.name)
             with open(audio_path, "wb") as f:
                 f.write(uploaded_audio.getbuffer())
             
