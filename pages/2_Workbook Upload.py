@@ -437,13 +437,11 @@ if uploaded_pdf is not None:
 # ---------------------------
 # 오디오 업로드 섹션
 # ---------------------------
-st.header("🎧 오디오 파일 업로드")
-st.markdown("MP3 오디오 파일을 업로드하세요. 파일명은 '숫자. 제목.mp3' 형식을 권장합니다.")
+st.header("🎧 파일 업로드")
+st.markdown("모든 파일을 업로드할 수 있습니다. 업로드된 파일은 audio 폴더에 저장됩니다.")
 
 uploaded_audio = st.file_uploader(
-    "오디오 파일 선택",
-    type=["mp3", "wav", "m4a"],
-    help="오디오 파일을 업로드하세요."
+    "파일 선택",    help="모든 파일을 업로드할 수 있습니다."
 )
 
 if uploaded_audio is not None:
