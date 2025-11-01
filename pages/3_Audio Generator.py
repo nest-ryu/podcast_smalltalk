@@ -881,8 +881,6 @@ if st.session_state.videos:
                                     )
                                     
                                     if git_commit_result.returncode == 0:
-                                        st.success("✅ 파일이 Git 저장소에 커밋되었습니다.")
-                                        
                                         # 3. git push (선택 사항, 실패해도 무방)
                                         try:
                                             git_push_result = subprocess.run(
@@ -895,16 +893,11 @@ if st.session_state.videos:
                                             )
                                             
                                             if git_push_result.returncode == 0:
-                                                st.success("✅ GitHub 저장소에 파일이 업로드되었습니다.")
-                                            else:
-                                                # 푸시 실패해도 파일은 저장되어 있음
-                                                error_msg = git_push_result.stderr
-                                                if 'Username' in error_msg or 'authentication' in error_msg.lower():
-                                                    st.info("ℹ️ 파일은 로컬 저장소에 저장되었습니다. GitHub 업로드는 수동으로 진행해주세요: `git push origin main`")
-                                                else:
-                                                    st.warning(f"⚠️ Git 푸시 실패 (파일은 저장됨): {error_msg[:200]}")
+                                                st.success("✅ GitHub 저장소에 파일이 저장되었습니다.")
+                                            # 푸시 실패해도 파일은 저장되어 있으므로 조용히 처리
                                         except Exception as push_error:
-                                            st.info("ℹ️ 파일은 로컬 저장소에 저장되었습니다. GitHub 업로드는 수동으로 진행해주세요.")
+                                            # 푸시 실패해도 파일은 저장되어 있으므로 조용히 처리
+                                            pass
                                     else:
                                         # 커밋 실패 - 파일은 여전히 저장되어 있음
                                         commit_error = git_commit_result.stderr
