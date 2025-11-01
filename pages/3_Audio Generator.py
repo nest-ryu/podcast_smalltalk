@@ -295,9 +295,17 @@ def refine_bounds_by_transcript(tr_result, min_words_per_seg: int = 2, pre_roll:
     except Exception:
         return None
 
-def refine_tail_by_transcript(tr_result, min_words_per_seg: int = 2, post_roll: float = 0.25) -> float | None:
-    """Whisper 결과에서 마지막 발화 종료 시간을 찾아, post-roll 만큼만 남겨 자를 길이(초)를 반환한다.
-    반환 값은 자를 총 길이(t)를 의미. 실패 시 None.
+def refine_tail_by_transcript(
+    tr_result,
+    min_words_per_seg: int = 2,
+    post_roll: float = 0.25,
+    gap_threshold: float = 2.0,
+) -> float | None:
+    """Whisper 세그먼트 간 마지막 '긴 정적 구간' 이후의 스피치를 제외하도록 컷 길이를 계산한다.
+    - 세그먼트 사이의 간격이 gap_threshold(초) 이상인 마지막 위치를 찾는다.
+    - 그 직전 세그먼트의 종료 시점 + post_roll 까지를 최종 길이로 사용한다.
+    - 없으면 기존 방식(마지막 발화 종료 + post_roll)으로 fallback.
+    반환 값은 자를 총 길이(t, 초). 실패 시 None.
     """
     try:
         segments = tr_result.get("segments", []) or []
@@ -308,9 +316,23 @@ def refine_tail_by_transcript(tr_result, min_words_per_seg: int = 2, post_roll: 
         speech_like = [s for s in segments if wc(s.get("text", "")) >= min_words_per_seg]
         if not speech_like:
             speech_like = segments
-        last_end = float(speech_like[-1].get("end", 0.0) or 0.0)
-        dur = float(tr_result.get("duration") or last_end or 0.0)
-        cut_to = min(dur, max(0.2, last_end + post_roll))
+        # 마지막 긴 간격 찾기
+        last_gap_index = None
+        for i in range(len(speech_like) - 1):
+            cur_end = float(speech_like[i].get("end", 0.0) or 0.0)
+            next_start = float(speech_like[i + 1].get("start", 0.0) or 0.0)
+            gap = max(0.0, next_start - cur_end)
+            if gap >= gap_threshold:
+                last_gap_index = i
+        if last_gap_index is not None:
+            # 간격 직전 세그먼트의 종료 시점 기준으로 컷
+            ref_end = float(speech_like[last_gap_index].get("end", 0.0) or 0.0)
+        else:
+            # fallback: 마지막 발화 종료
+            ref_end = float(speech_like[-1].get("end", 0.0) or 0.0)
+
+        dur = float(tr_result.get("duration") or ref_end or 0.0)
+        cut_to = min(dur, max(0.2, ref_end + post_roll))
         if cut_to <= 0.0:
             return None
         return cut_to
