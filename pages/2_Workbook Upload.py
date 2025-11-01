@@ -716,18 +716,16 @@ tab1, tab2 = st.tabs(["📄 PDF 파일 목록", "🎧 오디오 파일 목록"])
 
 with tab1:
     pdf_files = get_git_tracked_files(PDF_DIR, ('.pdf',))
-        if pdf_files:
-            for pdf_file in pdf_files:
-                st.text(f"📄 {pdf_file}")
-        else:
+    if pdf_files:
+        for pdf_file in pdf_files:
+            st.text(f"📄 {pdf_file}")
+    else:
         st.info("업로드된 PDF 파일이 없습니다. (Git 저장소에 추적되는 파일만 표시)")
-
 with tab2:
     audio_files = get_git_tracked_files(AUDIO_DIR, ('.mp3', '.wav', '.m4a'))
-        if audio_files:
-            for audio_file in audio_files:
-                st.text(f"🎧 {audio_file}")
-        else:
+    if audio_files:
+        for audio_file in audio_files:
+            st.text(f"🎧 {audio_file}")
+    else:
         st.info("업로드된 오디오 파일이 없습니다. (Git 저장소에 추적되는 파일만 표시)")
-
 
