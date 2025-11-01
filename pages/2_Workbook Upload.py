@@ -5,9 +5,8 @@ import json as _json
 import urllib.request
 import urllib.error
 import streamlit as st
-from config import PDF_DIR, AUDIO_DIR, EPISODES_JSON, BASE_DIR
-from make_episodes_json import add_pdf_to_json, build_json_from_all_pdfs
-
+from config import PDF_DIR, AUDIO_DIR, BASE_DIR
+from config import PDF_DIR, AUDIO_DIR, BASE_DIR
 
 def upload_to_github_via_api(local_path: str, rel_repo_path: str, commit_message: str, branch: str = "main") -> bool:
     try:
@@ -310,22 +309,13 @@ if uploaded_audio is not None:
 st.markdown("---")
 st.header("📊 현재 상태")
 
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 with col1:
-    if os.path.exists(EPISODES_JSON):
-        import json
-        with open(EPISODES_JSON, "r", encoding="utf-8") as f:
-            episodes = json.load(f)
-        st.metric("총 에피소드 수", len(episodes))
-    else:
-        st.metric("총 에피소드 수", 0)
-
-with col2:
     pdf_count = count_git_tracked_files(PDF_DIR, ('.pdf',))
     st.metric("PDF 파일 수", pdf_count)
 
-with col3:
+with col2:
     audio_count = count_git_tracked_files(AUDIO_DIR, ('.mp3', '.wav', '.m4a'))
     st.metric("오디오 파일 수", audio_count)
 
