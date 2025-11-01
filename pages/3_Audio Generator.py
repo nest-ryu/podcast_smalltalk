@@ -881,16 +881,65 @@ if st.session_state.videos:
                                     )
                                     
                                     if git_commit_result.returncode == 0:
-                                        # 3. git push
+                                        # 3. git push (Personal Access Token 사용 시도)
                                         try:
+                                            # Streamlit secrets에서 GitHub token 확인
+                                            github_token = None
+                                            try:
+                                                github_token = st.secrets.get("GITHUB_TOKEN") if hasattr(st, 'secrets') else None
+                                            except:
+                                                pass
+                                            
+                                            # 환경 변수에서도 확인
+                                            if not github_token:
+                                                github_token = os.environ.get('GITHUB_TOKEN')
+                                            
+                                            # Git push 실행
+                                            push_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
+                                            
+                                            # Token이 있으면 URL에 포함
+                                            if github_token:
+                                                # 원격 URL 가져오기
+                                                remote_url_result = subprocess.run(
+                                                    ['git', 'config', '--get', 'remote.origin.url'],
+                                                    cwd=BASE_DIR,
+                                                    capture_output=True,
+                                                    text=True,
+                                                    timeout=5
+                                                )
+                                                if remote_url_result.returncode == 0:
+                                                    original_url = remote_url_result.stdout.strip()
+                                                    # HTTPS URL인 경우 token 포함
+                                                    if original_url.startswith('https://'):
+                                                        token_url = original_url.replace('https://', f'https://{github_token}@')
+                                                        # 임시로 URL 변경
+                                                        subprocess.run(
+                                                            ['git', 'remote', 'set-url', 'origin', token_url],
+                                                            cwd=BASE_DIR,
+                                                            capture_output=True,
+                                                            timeout=5
+                                                        )
+                                            
                                             git_push_result = subprocess.run(
                                                 ['git', 'push', 'origin', 'main'],
                                                 cwd=BASE_DIR,
                                                 capture_output=True,
                                                 text=True,
                                                 timeout=30,
-                                                env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'}  # 비대화형 모드
+                                                env=push_env
                                             )
+                                            
+                                            # 원래 URL 복원 (token이 있었던 경우)
+                                            if github_token:
+                                                try:
+                                                    subprocess.run(
+                                                        ['git', 'remote', 'set-url', 'origin', original_url],
+                                                        cwd=BASE_DIR,
+                                                        capture_output=True,
+                                                        timeout=5
+                                                    )
+                                                except:
+                                                    pass
                                             
                                             if git_push_result.returncode == 0:
                                                 st.success("✅ GitHub 저장소에 파일이 저장되었습니다.")
@@ -898,7 +947,10 @@ if st.session_state.videos:
                                                 # 푸시 실패 원인 표시
                                                 error_msg = git_push_result.stderr or git_push_result.stdout or "알 수 없는 오류"
                                                 if 'Username' in error_msg or 'authentication' in error_msg.lower() or 'Permission denied' in error_msg:
-                                                    st.warning("⚠️ GitHub 인증 실패: 서버 환경에서는 자동 푸시가 제한될 수 있습니다. 파일은 로컬에 저장되었습니다.")
+                                                    if github_token:
+                                                        st.warning("⚠️ GitHub 인증 실패: Token이 유효하지 않거나 권한이 부족합니다. 파일은 로컬에 저장되었습니다.")
+                                                    else:
+                                                        st.warning("⚠️ GitHub 인증 실패: GITHUB_TOKEN을 설정해주세요. (Streamlit Secrets 또는 환경 변수)")
                                                 elif 'fatal' in error_msg.lower():
                                                     st.warning(f"⚠️ GitHub 푸시 실패: {error_msg[:300]}")
                                                 else:

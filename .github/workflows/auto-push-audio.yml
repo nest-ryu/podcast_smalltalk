@@ -1,0 +1,30 @@
+name: Auto Push Audio Files
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'audio/**'
+
+jobs:
+  verify-audio:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: List audio files
+        run: |
+          echo "Audio files in repository:"
+          ls -lh audio/ || echo "No audio directory found"
+          
+      - name: Verify audio files
+        run: |
+          if [ -d "audio" ] && [ "$(ls -A audio)" ]; then
+            echo "✅ Audio files are present in the repository"
+            ls -lh audio/
+          else
+            echo "⚠️ No audio files found"
+          fi
+
