@@ -1,5 +1,7 @@
 import os
 import json
+import re
+import subprocess
 import streamlit as st
 from io import BytesIO
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
@@ -7,7 +9,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-from config import AUDIO_DIR, EPISODES_JSON
+from config import AUDIO_DIR, EPISODES_JSON, BASE_DIR
 
 
 # ---------------------------
@@ -119,33 +121,114 @@ st.markdown("---")
 # ---------------------------
 # 오디오 재생
 # ---------------------------
-# 오디오 파일 찾기: 여러 패턴 시도
+def get_git_tracked_audio_files():
+    """Git에 추적되는 오디오 파일 목록 반환"""
+    try:
+        git_dir = os.path.join(BASE_DIR, '.git')
+        if not os.path.exists(git_dir):
+            # Git 저장소가 아니면 로컬 파일 시스템 사용
+            if os.path.exists(AUDIO_DIR):
+                return sorted([f for f in os.listdir(AUDIO_DIR) 
+                              if f.lower().endswith(('.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac'))])
+            return []
+        
+        # 상대 경로로 변환
+        rel_audio_dir = os.path.relpath(AUDIO_DIR, BASE_DIR).replace('\\', '/')
+        
+        result = subprocess.run(
+            ['git', 'ls-files', rel_audio_dir],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            tracked_files = result.stdout.strip().split('\n')
+            # 빈 문자열 제거 및 확장자 필터링, 파일명만 추출
+            file_list = [
+                os.path.basename(f) for f in tracked_files 
+                if f and f.lower().endswith(('.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac'))
+            ]
+            return sorted(file_list)
+    except Exception:
+        pass
+    
+    # Git 명령 실패 시 로컬 파일 시스템 사용 (fallback)
+    if os.path.exists(AUDIO_DIR):
+        return sorted([f for f in os.listdir(AUDIO_DIR) 
+                       if f.lower().endswith(('.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac'))])
+    return []
+
+
+def find_audio_file_for_lesson(lesson_num, title_en="", title_ko=""):
+    """레슨 번호에 맞는 오디오 파일 찾기 (다양한 패턴 지원)"""
+    audio_files = get_git_tracked_audio_files()
+    lesson_num_str = str(lesson_num)
+    lesson_num_padded = f"{lesson_num:03d}"  # 001 형식
+    
+    # 패턴 리스트 (우선순위 순)
+    patterns = [
+        # 정확한 매칭 패턴들
+        f"{lesson_num}.mp3",
+        f"{lesson_num_padded}.mp3",
+        f"Lesson {lesson_num}.mp3",
+        f"lesson-{lesson_num}.mp3",
+        
+        # 제목 포함 패턴들
+        f"{lesson_num}. {title_en}.mp3" if title_en else None,
+        f"{lesson_num}. {title_ko}.mp3" if title_ko else None,
+        f"{lesson_num_padded}. {title_en}.mp3" if title_en else None,
+        f"{lesson_num_padded}. {title_ko}.mp3" if title_ko else None,
+    ]
+    
+    # 패턴 제거 (None 제거)
+    patterns = [p for p in patterns if p]
+    
+    # 패턴 1: 정확한 파일명 매칭
+    for pattern in patterns:
+        for audio_file in audio_files:
+            if audio_file == pattern:
+                return os.path.join(AUDIO_DIR, audio_file)
+    
+    # 패턴 2: 숫자로 시작하는 파일 찾기
+    for audio_file in audio_files:
+        # 파일명에서 첫 번째 숫자 추출
+        match = re.match(r'^(\d+)', audio_file)
+        if match:
+            file_num = int(match.group(1))
+            if file_num == lesson_num:
+                return os.path.join(AUDIO_DIR, audio_file)
+    
+    # 패턴 3: 부분 매칭 (제목 포함)
+    if title_en or title_ko:
+        search_title = (title_ko if title_ko else title_en).lower()
+        for audio_file in audio_files:
+            # 레슨 번호로 시작하고 제목이 포함되어 있는지 확인
+            if (audio_file.startswith(f"{lesson_num}.") or 
+                audio_file.startswith(f"{lesson_num_padded}.")):
+                if search_title in audio_file.lower():
+                    return os.path.join(AUDIO_DIR, audio_file)
+    
+    # 패턴 4: 파일명에 레슨 번호가 포함된 경우
+    for audio_file in audio_files:
+        # "79" 또는 "079" 같은 패턴 찾기
+        if (f".{lesson_num}." in audio_file or 
+            f"-{lesson_num}." in audio_file or
+            f"_{lesson_num}." in audio_file or
+            audio_file.startswith(f"{lesson_num}-") or
+            audio_file.startswith(f"{lesson_num}_")):
+            return os.path.join(AUDIO_DIR, audio_file)
+    
+    return None
+
+
+# 오디오 파일 찾기 및 재생
 lesson_num = lesson["lesson"]
-audio_found = False
+audio_path = find_audio_file_for_lesson(lesson_num, title_en, title_ko)
 
-# 패턴 1: "{번호}. {제목}.mp3"
-try:
-    korean_title = title_ko if title_ko else title_en
-    audio_filename = f"{lesson_num}. {korean_title}.mp3"
-    audio_path = os.path.join(AUDIO_DIR, audio_filename)
-    if os.path.exists(audio_path):
-        st.audio(audio_path)
-        audio_found = True
-except:
-    pass
-
-# 패턴 2: "{번호}.mp3" 또는 다른 패턴들 시도
-if not audio_found:
-    for audio_file in os.listdir(AUDIO_DIR):
-        if audio_file.lower().endswith('.mp3'):
-            # 파일명이 숫자로 시작하는지 확인
-            if audio_file.startswith(f"{lesson_num}.") or audio_file.startswith(f"{lesson_num:03d}."):
-                audio_path = os.path.join(AUDIO_DIR, audio_file)
-                st.audio(audio_path)
-                audio_found = True
-                break
-
-if not audio_found:
+if audio_path and os.path.exists(audio_path):
+    st.audio(audio_path)
+else:
     st.warning(f"🎧 Lesson {lesson_num}에 해당하는 오디오 파일을 찾을 수 없습니다.")
 
 st.markdown("<br>", unsafe_allow_html=True)
