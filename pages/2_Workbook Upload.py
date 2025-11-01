@@ -503,7 +503,7 @@ if uploaded_audio is not None:
                     
                     # GitHub API 업로드 (선택)
                     try:
-                        upload_to_github_via_api(audio_path, rel_audio_path, f"Add audio file: {uploaded_audio.name}")
+                        upload_to_github_via_api(audio_path, rel_audio_path, f"Add file: {uploaded_audio.name}")
                     except Exception:
                         pass
 
@@ -517,7 +517,7 @@ if uploaded_audio is not None:
                     )
                     
                     # 2. git commit
-                    commit_msg = f"Add audio file: {uploaded_audio.name}"
+                    commit_msg = f"Add file: {uploaded_audio.name}"
                     subprocess.run(
                         ['git', 'commit', '-m', commit_msg],
                         cwd=BASE_DIR,
