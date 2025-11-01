@@ -880,9 +880,11 @@ if st.session_state.videos:
                                         timeout=5
                                     )
                                     
-                                    # Git commit 성공 - 파일은 로컬 저장소에 저장됨
-                                    # GitHub 푸시는 서버 환경 제한으로 자동화하지 않음
-                                    # 수동으로 'git push origin main' 실행 필요
+                                    if git_commit_result.returncode == 0:
+                                        # Git commit 성공 - 파일은 로컬 저장소에 저장됨
+                                        # GitHub 푸시는 서버 환경 제한으로 자동화하지 않음
+                                        # 수동으로 'git push origin main' 실행 필요
+                                        pass
                                     else:
                                         # 커밋 실패 - 파일은 여전히 저장되어 있음
                                         commit_error = git_commit_result.stderr
