@@ -160,56 +160,111 @@ def get_git_tracked_audio_files():
     return []
 
 
+def normalize_title(title):
+    """제목을 오디오 파일명 형식으로 정규화 (derive_base_name과 동일한 로직)"""
+    if not title:
+        return ""
+    # 구분자 정규화
+    cleaned = title.replace("|", "-").replace("_", " ")
+    # 특수문자 제거 (영문자, 숫자, 공백, 점, 하이픈만 유지)
+    cleaned = re.sub(r"[^A-Za-z0-9\s.-]", "", cleaned).strip()
+    # 연속 공백을 하나로
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    # 소문자로 변환
+    return cleaned.lower()
+
+
 def find_audio_file_for_lesson(lesson_num, title_en="", title_ko=""):
     """레슨 번호에 맞는 오디오 파일 찾기 (다양한 패턴 지원)"""
     audio_files = get_git_tracked_audio_files()
     lesson_num_str = str(lesson_num)
     lesson_num_padded = f"{lesson_num:03d}"  # 001 형식
     
+    # 제목 정규화 (오디오 파일명 형식과 일치시키기)
+    normalized_title_en = normalize_title(title_en) if title_en else ""
+    normalized_title_ko = normalize_title(title_ko) if title_ko else ""
+    
     # 패턴 리스트 (우선순위 순)
     patterns = [
-        # 정확한 매칭 패턴들
+        # 정확한 매칭 패턴들 (제목 없이)
         f"{lesson_num}.mp3",
         f"{lesson_num_padded}.mp3",
         f"Lesson {lesson_num}.mp3",
         f"lesson-{lesson_num}.mp3",
+        f"{lesson_num}. audio.mp3",  # derive_base_name의 fallback 패턴
         
-        # 제목 포함 패턴들
-        f"{lesson_num}. {title_en}.mp3" if title_en else None,
-        f"{lesson_num}. {title_ko}.mp3" if title_ko else None,
-        f"{lesson_num_padded}. {title_en}.mp3" if title_en else None,
-        f"{lesson_num_padded}. {title_ko}.mp3" if title_ko else None,
+        # 정규화된 제목 포함 패턴들 (영문 우선)
+        f"{lesson_num}. {normalized_title_en}.mp3" if normalized_title_en else None,
+        f"{lesson_num_padded}. {normalized_title_en}.mp3" if normalized_title_en else None,
+        # 한글 제목도 시도
+        f"{lesson_num}. {normalized_title_ko}.mp3" if normalized_title_ko else None,
+        f"{lesson_num_padded}. {normalized_title_ko}.mp3" if normalized_title_ko else None,
+        
+        # 원본 제목도 시도 (대소문자 구분 없이)
+        f"{lesson_num}. {title_en}.mp3".lower() if title_en else None,
+        f"{lesson_num}. {title_ko}.mp3".lower() if title_ko else None,
     ]
     
     # 패턴 제거 (None 제거)
     patterns = [p for p in patterns if p]
     
-    # 패턴 1: 정확한 파일명 매칭
+    # 패턴 1: 정확한 파일명 매칭 (대소문자 무시)
     for pattern in patterns:
         for audio_file in audio_files:
-            if audio_file == pattern:
+            if audio_file.lower() == pattern.lower():
                 return os.path.join(AUDIO_DIR, audio_file)
     
-    # 패턴 2: 숫자로 시작하는 파일 찾기
+    # 패턴 2: 숫자로 시작하는 파일 찾기 (가장 먼저 - 가장 확실한 매칭)
+    # 레슨 번호로 시작하는 모든 파일을 확인
+    candidates = []
     for audio_file in audio_files:
         # 파일명에서 첫 번째 숫자 추출
         match = re.match(r'^(\d+)', audio_file)
         if match:
             file_num = int(match.group(1))
             if file_num == lesson_num:
-                return os.path.join(AUDIO_DIR, audio_file)
+                candidates.append(audio_file)
     
-    # 패턴 3: 부분 매칭 (제목 포함)
+    # 후보가 하나면 바로 반환
+    if len(candidates) == 1:
+        return os.path.join(AUDIO_DIR, candidates[0])
+    
+    # 후보가 여러 개면 제목 매칭 시도
+    if candidates and (normalized_title_en or normalized_title_ko):
+        search_title = normalized_title_ko if normalized_title_ko else normalized_title_en
+        for candidate in candidates:
+            # 파일명에서 제목 부분 추출 (숫자. 제목.mp3 형식)
+            match = re.match(r'^\d+\.\s*(.+?)\.mp3$', candidate, re.IGNORECASE)
+            if match:
+                file_title = normalize_title(match.group(1))
+                # 정규화된 제목이 포함되어 있는지 확인
+                if search_title in file_title or file_title in search_title:
+                    return os.path.join(AUDIO_DIR, candidate)
+        
+        # 제목 매칭 실패 시 첫 번째 후보 반환
+        if candidates:
+            return os.path.join(AUDIO_DIR, candidates[0])
+    
+    # 후보가 여러 개지만 제목이 없는 경우, 첫 번째 반환
+    if candidates:
+        return os.path.join(AUDIO_DIR, candidates[0])
+    
+    # 패턴 3: 부분 매칭 (제목 포함) - 더 유연한 검색
     if title_en or title_ko:
-        search_title = (title_ko if title_ko else title_en).lower()
-        for audio_file in audio_files:
-            # 레슨 번호로 시작하고 제목이 포함되어 있는지 확인
-            if (audio_file.startswith(f"{lesson_num}.") or 
-                audio_file.startswith(f"{lesson_num_padded}.")):
-                if search_title in audio_file.lower():
-                    return os.path.join(AUDIO_DIR, audio_file)
+        search_title = normalized_title_ko if normalized_title_ko else normalized_title_en
+        if search_title:
+            # 제목의 주요 단어들 추출 (2글자 이상)
+            title_words = [w for w in search_title.split() if len(w) >= 2]
+            for audio_file in audio_files:
+                # 레슨 번호로 시작하는 파일만 확인
+                if (audio_file.lower().startswith(f"{lesson_num}.") or 
+                    audio_file.lower().startswith(f"{lesson_num_padded}.")):
+                    file_lower = audio_file.lower()
+                    # 주요 단어 중 하나라도 포함되면 매칭
+                    if any(word in file_lower for word in title_words):
+                        return os.path.join(AUDIO_DIR, audio_file)
     
-    # 패턴 4: 파일명에 레슨 번호가 포함된 경우
+    # 패턴 4: 파일명에 레슨 번호가 포함된 경우 (마지막 시도)
     for audio_file in audio_files:
         # "79" 또는 "079" 같은 패턴 찾기
         if (f".{lesson_num}." in audio_file or 
