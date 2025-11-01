@@ -15,7 +15,7 @@ from config import AUDIO_DIR, EPISODES_JSON, BASE_DIR
  
 # ---------------------------
 # 기본 설정
-# ---------------------------
+# ----------------------------
 st.set_page_config(page_title="Podcast Smalltalk | 학습지", page_icon="📚", layout="wide", initial_sidebar_state="expanded")
 st.title("📚 Podcast Smalltalk | 학습지")
 st.markdown("🔹 Lesson 번호를 입력하거나 ⏮⏭ 버튼으로 이동하세요.")
