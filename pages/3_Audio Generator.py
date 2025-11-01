@@ -881,10 +881,57 @@ if st.session_state.videos:
                                     )
                                     
                                     if git_commit_result.returncode == 0:
-                                        # Git commit 성공 - 파일은 로컬 저장소에 저장됨
-                                        # GitHub 푸시는 서버 환경 제한으로 자동화하지 않음
-                                        # 수동으로 'git push origin main' 실행 필요
-                                        pass
+                                        # GitHub 자동 푸시 (GITHUB_TOKEN 사용 시)
+                                        try:
+                                            github_token = None
+                                            try:
+                                                github_token = st.secrets.get("GITHUB_TOKEN") if hasattr(st, 'secrets') else None
+                                            except Exception:
+                                                github_token = os.environ.get('GITHUB_TOKEN')
+
+                                            remote_url_result = subprocess.run(
+                                                ['git', 'config', '--get', 'remote.origin.url'],
+                                                cwd=BASE_DIR,
+                                                capture_output=True,
+                                                text=True,
+                                                timeout=5
+                                            )
+                                            original_url = remote_url_result.stdout.strip() if remote_url_result.returncode == 0 else ''
+
+                                            # 토큰이 있으면 임시로 origin URL을 토큰 포함 형태로 설정
+                                            if github_token and original_url.startswith('https://'):
+                                                token_url = original_url.replace('https://', f'https://{github_token}@')
+                                                subprocess.run(
+                                                    ['git', 'remote', 'set-url', 'origin', token_url],
+                                                    cwd=BASE_DIR,
+                                                    capture_output=True,
+                                                    timeout=5
+                                                )
+
+                                            push_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
+                                            push_result = subprocess.run(
+                                                ['git', 'push', 'origin', 'main'],
+                                                cwd=BASE_DIR,
+                                                capture_output=True,
+                                                text=True,
+                                                timeout=30,
+                                                env=push_env
+                                            )
+
+                                            # 원래 URL 복원
+                                            if github_token and original_url:
+                                                subprocess.run(
+                                                    ['git', 'remote', 'set-url', 'origin', original_url],
+                                                    cwd=BASE_DIR,
+                                                    capture_output=True,
+                                                    timeout=5
+                                                )
+
+                                            if push_result.returncode == 0:
+                                                st.success("✅ GitHub로 자동 업로드 완료")
+                                        except Exception:
+                                            # 푸시 실패는 조용히 무시 (로컬 커밋은 이미 완료됨)
+                                            pass
                                     else:
                                         # 커밋 실패 - 파일은 여전히 저장되어 있음
                                         commit_error = git_commit_result.stderr

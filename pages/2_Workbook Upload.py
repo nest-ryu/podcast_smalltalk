@@ -183,6 +183,52 @@ if uploaded_pdf is not None:
                             text=True,
                             timeout=5
                         )
+                        
+                        # 3. git push (GITHUB_TOKEN 사용 시 자동 푸시)
+                        try:
+                            github_token = None
+                            try:
+                                github_token = st.secrets.get("GITHUB_TOKEN") if hasattr(st, 'secrets') else None
+                            except Exception:
+                                github_token = os.environ.get('GITHUB_TOKEN')
+                            
+                            remote_url_result = subprocess.run(
+                                ['git', 'config', '--get', 'remote.origin.url'],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
+                            original_url = remote_url_result.stdout.strip() if remote_url_result.returncode == 0 else ''
+                            
+                            if github_token and original_url.startswith('https://'):
+                                token_url = original_url.replace('https://', f'https://{github_token}@')
+                                subprocess.run(
+                                    ['git', 'remote', 'set-url', 'origin', token_url],
+                                    cwd=BASE_DIR,
+                                    capture_output=True,
+                                    timeout=5
+                                )
+                            
+                            push_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
+                            subprocess.run(
+                                ['git', 'push', 'origin', 'main'],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                text=True,
+                                timeout=30,
+                                env=push_env
+                            )
+                            
+                            if github_token and original_url:
+                                subprocess.run(
+                                    ['git', 'remote', 'set-url', 'origin', original_url],
+                                    cwd=BASE_DIR,
+                                    capture_output=True,
+                                    timeout=5
+                                )
+                        except Exception:
+                            pass
                 except Exception:
                     pass  # Git 명령 실패 시 무시
                 
@@ -256,6 +302,52 @@ if uploaded_pdf is not None:
                             text=True,
                             timeout=5
                         )
+                        
+                        # 3. git push (GITHUB_TOKEN 사용 시 자동 푸시)
+                        try:
+                            github_token = None
+                            try:
+                                github_token = st.secrets.get("GITHUB_TOKEN") if hasattr(st, 'secrets') else None
+                            except Exception:
+                                github_token = os.environ.get('GITHUB_TOKEN')
+                            
+                            remote_url_result = subprocess.run(
+                                ['git', 'config', '--get', 'remote.origin.url'],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
+                            original_url = remote_url_result.stdout.strip() if remote_url_result.returncode == 0 else ''
+                            
+                            if github_token and original_url.startswith('https://'):
+                                token_url = original_url.replace('https://', f'https://{github_token}@')
+                                subprocess.run(
+                                    ['git', 'remote', 'set-url', 'origin', token_url],
+                                    cwd=BASE_DIR,
+                                    capture_output=True,
+                                    timeout=5
+                                )
+                            
+                            push_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
+                            subprocess.run(
+                                ['git', 'push', 'origin', 'main'],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                text=True,
+                                timeout=30,
+                                env=push_env
+                            )
+                            
+                            if github_token and original_url:
+                                subprocess.run(
+                                    ['git', 'remote', 'set-url', 'origin', original_url],
+                                    cwd=BASE_DIR,
+                                    capture_output=True,
+                                    timeout=5
+                                )
+                        except Exception:
+                            pass
                 except Exception:
                     pass  # Git 명령 실패 시 무시
                     
@@ -350,6 +442,52 @@ if uploaded_audio is not None:
                         text=True,
                         timeout=5
                     )
+                    
+                    # 3. git push (GITHUB_TOKEN 사용 시 자동 푸시)
+                    try:
+                        github_token = None
+                        try:
+                            github_token = st.secrets.get("GITHUB_TOKEN") if hasattr(st, 'secrets') else None
+                        except Exception:
+                            github_token = os.environ.get('GITHUB_TOKEN')
+                        
+                        remote_url_result = subprocess.run(
+                            ['git', 'config', '--get', 'remote.origin.url'],
+                            cwd=BASE_DIR,
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        original_url = remote_url_result.stdout.strip() if remote_url_result.returncode == 0 else ''
+                        
+                        if github_token and original_url.startswith('https://'):
+                            token_url = original_url.replace('https://', f'https://{github_token}@')
+                            subprocess.run(
+                                ['git', 'remote', 'set-url', 'origin', token_url],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                timeout=5
+                            )
+                        
+                        push_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
+                        subprocess.run(
+                            ['git', 'push', 'origin', 'main'],
+                            cwd=BASE_DIR,
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                            env=push_env
+                        )
+                        
+                        if github_token and original_url:
+                            subprocess.run(
+                                ['git', 'remote', 'set-url', 'origin', original_url],
+                                cwd=BASE_DIR,
+                                capture_output=True,
+                                timeout=5
+                            )
+                    except Exception:
+                        pass
             except Exception:
                 pass  # Git 명령 실패 시 무시
             
