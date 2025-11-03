@@ -12,7 +12,7 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from config import AUDIO_DIR, EPISODES_JSON, BASE_DIR
 
  
- 
+
 # ---------------------------
 # 기본 설정
 # ----------------------------
@@ -44,6 +44,8 @@ if "lesson_index" not in st.session_state:
     st.session_state.lesson_index = 0
 if "lesson_query" not in st.session_state:
     st.session_state.lesson_query = ""
+if "needs_rerun" not in st.session_state:
+    st.session_state.needs_rerun = False
 
 
 # ---------------------------
@@ -65,8 +67,8 @@ def _on_enter():
             pass
     # 항상 비워서 공백 유지
     st.session_state.lesson_query = ""
-    # 화면 갱신 (rerun)
-    st.rerun()
+    # 리렌더링 필요 플래그 설정 (콜백 내에서 st.rerun() 직접 호출 불가)
+    st.session_state.needs_rerun = True
 
 
 # ---------------------------
@@ -78,6 +80,11 @@ st.text_input(
     placeholder="번호 입력 후 Enter",
     on_change=_on_enter,
 )
+
+# 콜백에서 설정한 플래그 확인하여 리렌더링
+if st.session_state.needs_rerun:
+    st.session_state.needs_rerun = False
+    st.rerun()
 
 
 # ---------------------------
