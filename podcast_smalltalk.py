@@ -53,14 +53,20 @@ def _on_enter():
     raw = st.session_state.lesson_query.strip().upper().replace("LESSON", "").strip()
     if raw.isdigit():
         n = int(raw)
-        if 1 <= n <= len(lessons):
-            # lesson 번호로 찾기
-            for i, lesson in enumerate(lessons):
-                if lesson["lesson"] == n:
-                    st.session_state.lesson_index = i
-                    break
+        # lesson 번호로 찾기
+        found = False
+        for i, lesson in enumerate(lessons):
+            if lesson["lesson"] == n:
+                st.session_state.lesson_index = i
+                found = True
+                break
+        if not found:
+            # 레슨 번호를 찾지 못한 경우 경고 표시는 나중에 처리
+            pass
     # 항상 비워서 공백 유지
     st.session_state.lesson_query = ""
+    # 화면 갱신 (rerun)
+    st.rerun()
 
 
 # ---------------------------
