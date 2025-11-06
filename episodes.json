@@ -161,5 +161,29 @@
       "→ 농담처럼 분위기를 완화하며 나쁜 소식을 전할 때 사용할 수 있는 표현입니다."
     ],
     "source_pdf": "81. Telling Bad News.pdf"
+  },
+  {
+    "lesson": 82,
+    "title": "Emergency",
+    "english": "A: Help! Are you a doctor? My poor little Frankie has just stopped breathing. Oh my\ngosh, help me! I tried to perform CPR, but I don't know if I could get any air into his\nlungs. Frankie!\nB: Ellen, get him hooked up to a monitor. Somebody page Dr. Hauser. Hold the patient\nstill. I can't get a pulse. Okay, he's on the monitor. His BP's falling. He's flatlining.\nA: No, Frankie...\nB: Someone get her out of here! Get me the defibrillator. Clear! Again, clear! Come\non... I'm not letting go of you. Clear! I've got a pulse.\nC: Okay, what's happening?\nB: Patient is in acute respiratory failure. I think we're going to have to intubate.\nC: All right, tube's in. Somebody give him 10cc shot of adrenaline. Let's go! Move,\npeople, move!\nA: Doctor! Oh, thank God! How is he?\nB: We've managed to stabilize Frankie, but he's not out of the woods yet. He's still in\ncritical condition. We're moving him to intensive care, but...\nA: Doctor, just do whatever it takes. I just want my little Frankie to be okay. I\ncouldn't imagine life without my little hamster.",
+    "korean": "A: 도와주세요! 혹시 의사세요? 우리 프랭키가 숨을 못 쉬어요! CPR을 해보려 했는데 공기가\n폐로 들어가는지 모르겠어요. 프랭키야!\nB: 엘렌, 모니터 연결하세요. 하우저 박사 호출하세요. 환자 잡아주세요. 맥박이 잡히지\n않습니다. 혈압이 떨어지고 있어요. 심박이 멈췄습니다.\nA: 안 돼, 프랭키...\nB: 누군가 보호자를 밖으로 모셔주세요! 제세동기 가져오세요. 클리어! 다시 클리어! 제발\n버텨! 맥박 돌아왔습니다!\nC: 지금 어떤 상황입니까?\nB: 급성 호흡부전입니다. 기도삽관이 필요합니다.\nC: 튜브 들어갔습니다. 환기하세요. 아드레날린 10cc 투여! 모두 서둘러요!\nA: 선생님! 상태는 어떤가요?\nB: 프랭키는 안정되긴 했지만 아직 위독합니다. 중환자실로 옮길 예정입니다.\nA: 제발 뭐든지 해주세요. 프랭키 없이는 살 수 없어요.",
+    "expressions": [
+      "• CPR : 심폐소생술",
+      "• flatline : 심장 박동이 멈추다",
+      "• defibrillator : 제세동기",
+      "• pulse : 맥박",
+      "• BP (Blood Pressure) : 혈압",
+      "• acute respiratory failure : 급성 호흡부전",
+      "• intubate : 기도삽관하다",
+      "• stabilize : 상태를 안정시키다",
+      "• critical condition : 위독한 상태",
+      "• intensive care : 중환자실(ICU)"
+    ],
+    "keypoints": [
+      "• 응급 상황에서는 짧고 명확한 명령형 표현이 핵심이다.",
+      "• 의료 현장에서 자주 쓰이는 실전 응급 용어를 익힌다.",
+      "• 'critical condition', 'intubate', 'defibrillator' 같은 표현 숙지."
+    ],
+    "source_pdf": "82. Emergency.pdf"
   }
 ]
