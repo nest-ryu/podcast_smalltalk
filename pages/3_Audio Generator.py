@@ -1,7 +1,7 @@
 """
 오디오 생성 페이지
 YouTube에서 다운로드하고 podcast_cutter로 회화 부분 추출
-모든 필요한 코드가 내부에 포함되어 있습니다.
+모든 필요한 코드가 내부에 포함되어 있습니다..
 """
 import os
 import sys
