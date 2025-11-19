@@ -868,7 +868,7 @@ if st.button("🔄 English Podcast Zone 최신 영상 불러오기", type="prima
         try:
             videos = downloader._get_videos_from_url(
                 "https://www.youtube.com/@EnglishPodcastZone/videos",
-                max_results=3
+                max_results=10 # 최대 10개 영상 가져오기
             )
             if videos:
                 st.session_state.videos = videos
