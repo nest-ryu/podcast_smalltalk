@@ -1,7 +1,7 @@
 """
-오디오 생성 페이지.
+오디오 생성 페이지
 YouTube에서 다운로드하고 podcast_cutter로 회화 부분 추출
-모든 필요한 코드가 내부에 포함되어 있습니다.
+모든 필요한 코드가 내부에 포함되어 있습니다..
 """
 import os
 import sys
@@ -868,7 +868,7 @@ if st.button("🔄 English Podcast Zone 최신 영상 불러오기", type="prima
         try:
             videos = downloader._get_videos_from_url(
                 "https://www.youtube.com/@EnglishPodcastZone/videos",
-                max_results=3
+                max_results=10 # 최대 10개 영상 가져오기
             )
             if videos:
                 st.session_state.videos = videos
